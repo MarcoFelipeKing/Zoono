@@ -1,0 +1,124 @@
+---
+title: "Zoono Hand Sanitiser"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE)
+pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes)
+```
+
+## Import the data
+
+
+```{r data import}
+df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names() %>% select(-1) %>% 
+  mutate(treatment=as.factor(treatment),
+         group=as.factor(group))
+# df %>% 
+#   filter(treatment=="Untreated") %>% 
+#   filter(time==0) %>% 
+#   mutate(conc=)
+```
+
+You need to duplicate each person's untreated hand count and label it as treatment to allow for the same statrting value
+```{r}
+
+df %>% 
+  filter(treatment=="Untreated") %>% 
+  filter(time==0) %>% 
+  mutate()
+```
+
+
+## Including Plots
+
+Let's have a quick look at each person's individual trajectory. Note that individuals are in both "treated" and "untreated" groups because only one hand is washed with the other one being thte control
+
+```{r Plot the data - Individual, echo=FALSE}
+df %>% 
+  ggplot()+
+  geom_point(aes(x=time,y=conc,colour=id %>% as.factor()),size=1.5)+
+  scale_y_log10(
+   breaks = scales::trans_breaks("log10", function(x) 10^x)
+ )+
+  annotation_logticks(sides = "l")  +
+  scale_color_brewer(palette = "Set1")+
+  xlab("Hours after cleaning")+
+  ylab("Concentration [CFU/cm2]")+
+  labs(col="Individual participant")+
+  hrbrthemes::theme_ipsum()
+  
+  
+```
+
+Here we plot the points and superimpose a meand value plus 95% confidence interval
+
+```{r Plot the data - Aggregate, echo=FALSE}
+df %>% 
+  ggplot()+
+  geom_point(aes(x=time,y=conc),colour="gray",alpha=0.5,size=1.5)+
+  # stat_summary(aes(x=time,y=conc,colour=treatment),fun.data = "mean_cl_boot", size = 0.8)+
+  stat_summary(aes(x=time,y=conc,colour=treatment),fun.data = "mean_cl_boot", size = 1.01)+
+  # scale_y_continuous(trans = "log10")+
+  scale_y_log10(
+   breaks = scales::trans_breaks("log10", function(x) 10^x)
+ )+
+  annotation_logticks(sides = "l")  +
+  scale_color_brewer(palette = "Set1")+
+  xlab("Hours after cleaning")+
+  ylab("Colony forming units [CFU]")+
+  labs(col="Group")+
+  hrbrthemes::theme_ipsum()
+  
+  
+```
+
+# Simple regression model
+
+
+```{r}
+df %>% 
+  ggplot()+
+  geom_point(aes(x=time,y=conc),colour="gray",alpha=0.5,size=1.5)+
+  stat_summary(aes(x=time,y=conc,colour=treatment),fun.data = "mean_cl_boot", size = 1.01)+
+  scale_y_log10(
+   breaks = scales::trans_breaks("log10", function(x) 10^x)
+ )+
+  annotation_logticks(sides = "l")  +
+  scale_color_brewer(palette = "Set1")+
+  geom_smooth(method="lm",aes(x=time,y=conc,colour=treatment))+
+  xlab("Hours after cleaning")+
+  ylab("Colony forming units [CFU]")+
+  labs(col="Group")+
+  hrbrthemes::theme_ipsum()
+```
+
+
+#Run a regression model to estimate the effect of time
+
+Use the bayesian regression package BRMS and plots using bayesplot "group+time+intervention + (time+intervention | participant)"
+```{r}
+
+fit_m <- brm(log10(conc) ~ 1+group+time+treatment+ (time+treatment | id), 
+                              data   = df, 
+                              warmup = 1000, 
+                              iter   = 3000, 
+                              chains = 4, 
+                              inits  = "random",
+                              cores  = 4)
+summary(fit_m)
+
+plot(fit_m)
+
+```
+
+
+Using bayesplot package we can create some nice plots which investigate the fitted model
+
+```{r}
+color_scheme_set("red")
+ppc_dens_overlay(y = log10(fit_m$data$conc),
+                 yrep = posterior_predict(fit_m, draws = 10))
+```
+
