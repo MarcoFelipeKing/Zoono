@@ -4,7 +4,7 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,warning = FALSE)
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes)
 ```
 
@@ -38,7 +38,7 @@ Let's have a quick look at each person's individual trajectory. Note that indivi
 ```{r Plot the data - Individual, echo=FALSE}
 df %>% 
   ggplot()+
-  geom_point(aes(x=time,y=conc,colour=id %>% as.factor()),size=1.5)+
+  geom_point(aes(x=time,y=conc,colour=id %>% as.factor(),shape=group),size=1.5)+
   scale_y_log10(
    breaks = scales::trans_breaks("log10", function(x) 10^x)
  )+
@@ -51,6 +51,71 @@ df %>%
   
   
 ```
+Is there a correlation between each participant's left and right hand (ie. treated vs untreated). The plot shows the effect of adding the group into the regression.
+
+```{r individual correlation}
+#Don't iclude group in the regression
+df %>%
+    pivot_wider(names_from = treatment, values_from = conc) %>% 
+  ggplot()+
+  geom_point(aes(x=Untreated,y=Treated,colour=time %>% as.numeric()),size=1.5)+
+  geom_smooth(aes(x=Untreated,y=Treated),method="lm")+
+  scale_y_log10(
+   breaks = scales::trans_breaks("log10", function(x) 10^x),labels = scales::number_format(accuracy = 1)
+ )+
+      scale_x_log10(
+   breaks = scales::trans_breaks("log10", function(x) 10^x),labels = scales::number_format(accuracy = 1)
+ )+
+  annotation_logticks(sides = "lb")  +
+  # scale_color_brewer(palette = "Set1")+
+  xlab("Untreated hand CFU")+
+  ylab("Treated hand CFU")+
+  labs(col="Time after treatment")+
+  hrbrthemes::theme_ipsum()+
+  theme(axis.text.x=element_text(angle = 90, hjust = 0),legend.position = "top")->a
+
+#Include group in the regression
+df %>%
+    pivot_wider(names_from = treatment, values_from = conc) %>% 
+  ggplot()+
+  geom_point(aes(x=Untreated,y=Treated,colour=group,shape=group),size=1.5, show.legend = F)+
+  geom_smooth(aes(x=Untreated,y=Treated,colour=group),method="lm")+
+  scale_y_log10(
+   breaks = scales::trans_breaks("log10", function(x) 10^x),labels = scales::number_format(accuracy = 1)
+ )+
+      scale_x_log10(
+   breaks = scales::trans_breaks("log10", function(x) 10^x),labels = scales::number_format(accuracy = 1)
+ )+
+  annotation_logticks(sides = "lb")  +
+  scale_color_brewer(palette = "Set1")+
+  xlab("Untreated hand CFU")+
+  ylab("Treated hand CFU")+
+  labs(col="Time after treatment")+
+  hrbrthemes::theme_ipsum()+
+  theme(axis.text.x=element_text(angle = 90, hjust = 0),legend.position = "top")->b
+
+ggpubr::ggarrange(a,b,common.legend = FALSE,labels = c("Ungrouped data","Split by group"))
+
+```
+
+
+Linear regression on concentration amongst participants. Is there a significant effect of group on the correlation between participants' treated and untreated hands? We perform step-wise regression until no further variables can be removed.
+```{r}
+df %>%
+    pivot_wider(names_from = treatment, values_from = conc) %>% 
+  mutate(id=as.factor(id))->data
+# lm_fit_aggregated<-lm(log10(Treated)~log10(Untreated),data=data)
+# lm_fit_disaggregated<-lm(log10(Treated)~log10(Untreated)+group,data=data)
+# broom::tidy(lm_fit)
+# aov(lm_fit_aggregated,lm_fit_disaggregated)
+anova(lm_fit_aggregated,lm_fit_disaggregated)
+data %>% checkmate::anyMissing()
+
+lm_fit<-lm(log10(Treated)~.,data=data )
+selectedMod <- step(lm_fit)
+broom::tidy(selectedMod)
+```
+It turns out that only time and the concentration on the untreated value have a significant effect on predicting concentration on the hand. This is good to know and shows that the regression lines plotted above are not significantly different.
 
 Here we plot the points and superimpose a meand value plus 95% confidence interval
 
@@ -58,9 +123,7 @@ Here we plot the points and superimpose a meand value plus 95% confidence interv
 df %>% 
   ggplot()+
   geom_point(aes(x=time,y=conc),colour="gray",alpha=0.5,size=1.5)+
-  # stat_summary(aes(x=time,y=conc,colour=treatment),fun.data = "mean_cl_boot", size = 0.8)+
   stat_summary(aes(x=time,y=conc,colour=treatment),fun.data = "mean_cl_boot", size = 1.01)+
-  # scale_y_continuous(trans = "log10")+
   scale_y_log10(
    breaks = scales::trans_breaks("log10", function(x) 10^x)
  )+
@@ -74,7 +137,7 @@ df %>%
   
 ```
 
-# Simple regression model
+# Regression on time
 
 
 ```{r}
@@ -96,29 +159,71 @@ df %>%
 
 
 #Run a regression model to estimate the effect of time
-
 Use the bayesian regression package BRMS and plots using bayesplot "group+time+intervention + (time+intervention | participant)"
+## Summary statistics 
+This can be useful to produce the prior prediction.
+
 ```{r}
+df %>% 
+  summarise(m=mean(conc),sd=sd(conc)) 
+```
 
-fit_m <- brm(log10(conc) ~ 1+group+time+treatment+ (time+treatment | id), 
-                              data   = df, 
-                              warmup = 1000, 
-                              iter   = 3000, 
-                              chains = 4, 
-                              inits  = "random",
-                              cores  = 4)
-summary(fit_m)
 
-plot(fit_m)
+```{r fit the Bayesia model}
+
+# fit_m <- brm(log10(conc) ~ 1+time+treatment+ (time+treatment | id), 
+#                               data   = df, 
+#                               warmup = 1000, 
+#                               iter   = 3000, 
+#                               chains = 4, 
+#                               inits  = "random",
+#                               cores  = 4)
+# summary(fit_m)
+# 
+# plot(fit_m)
+
+#Make sure id is a factor
+df %>% 
+  mutate(id=as.factor(id))->df
+
+fit_m2<-brm(conc~group+time*treatment+(1|id),data=df,family =lognormal(link = "identity", link_sigma = "log"))
+           # prior=prior(normal(66569.89,107527.2)),sample_prior = "only")
+conditional_effects(fit_m2)
+summary(fit_m2)
+```
+Let's have a look at the output from the model fit_lm2
+```{r}
+summary(fit_m2)
+plot(fit_m2)
+```
+
+We have assumed that the treatment has a gaussian distribution. Light blue Plot the posterior predictive values.
+
+```{r ecfd_overlay }
+pp_check(fit_m2,type="ecdf_overlay")
 
 ```
+
 
 
 Using bayesplot package we can create some nice plots which investigate the fitted model
 
 ```{r}
 color_scheme_set("red")
-ppc_dens_overlay(y = log10(fit_m$data$conc),
-                 yrep = posterior_predict(fit_m, draws = 10))
+bayesplot::ppc_dens_overlay(y = (fit_m2$data$conc),
+                 yrep = posterior_predict(fit_m2, draws = 5))
 ```
+
+
+Epilepsy data
+
+```{r}
+
+
+fit1 <- brm(count ~ zAge + zBase * Trt + (zBase * Trt|patient), 
+            data = epilepsy, family = poisson())
+
+plot(fit1, variable = c("b_Trt1", "b_zBase"))
+```
+
 
