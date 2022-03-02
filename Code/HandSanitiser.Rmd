@@ -38,10 +38,11 @@ Let's have a quick look at each person's individual trajectory. Note that indivi
 ```{r Plot the data - Individual, echo=FALSE}
 df %>% 
   ggplot()+
-  geom_point(aes(x=time,y=conc,colour=id %>% as.factor(),shape=group),size=1.5)+
+  geom_point(aes(x=time,y=conc,colour=id %>% as.factor()),size=1.5)+
   scale_y_log10(
    breaks = scales::trans_breaks("log10", function(x) 10^x)
  )+
+  facet_wrap(~group,nrow = 2)+
   annotation_logticks(sides = "l")  +
   scale_color_brewer(palette = "Set1")+
   xlab("Hours after cleaning")+
@@ -104,16 +105,22 @@ Linear regression on concentration amongst participants. Is there a significant 
 df %>%
     pivot_wider(names_from = treatment, values_from = conc) %>% 
   mutate(id=as.factor(id))->data
-# lm_fit_aggregated<-lm(log10(Treated)~log10(Untreated),data=data)
-# lm_fit_disaggregated<-lm(log10(Treated)~log10(Untreated)+group,data=data)
+lm_fit_aggregated<-lm(log10(Treated)~log10(Untreated),data=data)
+lm_fit_disaggregated<-lm(log10(Treated)~log10(Untreated)+group,data=data)
 # broom::tidy(lm_fit)
 # aov(lm_fit_aggregated,lm_fit_disaggregated)
-anova(lm_fit_aggregated,lm_fit_disaggregated)
+# anova(lm_fit_aggregated,lm_fit_disaggregated)
 data %>% checkmate::anyMissing()
 
 lm_fit<-lm(log10(Treated)~.,data=data )
 selectedMod <- step(lm_fit)
 broom::tidy(selectedMod)
+
+lm_fit<-lm(log10(conc)~.,data=df %>% select(-id) )
+selectedMod <- step(lm_fit)
+broom::tidy(selectedMod)
+
+
 ```
 It turns out that only time and the concentration on the untreated value have a significant effect on predicting concentration on the hand. This is good to know and shows that the regression lines plotted above are not significantly different.
 
@@ -139,7 +146,7 @@ df %>%
 
 # Regression on time
 
-
+The issue is that the data are not really linearly related so we need to account for the non-monotonic behaviour within the model.
 ```{r}
 df %>% 
   ggplot()+
@@ -160,8 +167,9 @@ df %>%
 
 #Run a regression model to estimate the effect of time
 Use the bayesian regression package BRMS and plots using bayesplot "group+time+intervention + (time+intervention | participant)"
+
 ## Summary statistics 
-This can be useful to produce the prior prediction.
+This can be useful to produce the prior prediction if we have some idea of an initial distribution.
 
 ```{r}
 df %>% 
@@ -169,7 +177,7 @@ df %>%
 ```
 
 
-```{r fit the Bayesia model}
+```{r fit the Bayesian model}
 
 # fit_m <- brm(log10(conc) ~ 1+time+treatment+ (time+treatment | id), 
 #                               data   = df, 
@@ -186,10 +194,16 @@ df %>%
 df %>% 
   mutate(id=as.factor(id))->df
 
+fit_m1<-brm(conc~group+time*treatment+(1|id),data=df,family =Gamma(link = "log"))
+
 fit_m2<-brm(conc~group+time*treatment+(1|id),data=df,family =lognormal(link = "identity", link_sigma = "log"))
            # prior=prior(normal(66569.89,107527.2)),sample_prior = "only")
-conditional_effects(fit_m2)
+
+loo(fit_m1,fit_m2)
+
+conditional_effects(fit_m1)
 summary(fit_m2)
+plot(fit_m1)
 ```
 Let's have a look at the output from the model fit_lm2
 ```{r}
