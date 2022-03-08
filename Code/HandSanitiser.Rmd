@@ -199,22 +199,22 @@ fit_m1<-brm(conc~group+time*treatment+(1|id),data=df,family =Gamma(link = "log")
 fit_m2<-brm(conc~group+time*treatment+(1|id),data=df,family =lognormal(link = "identity", link_sigma = "log"))
            # prior=prior(normal(66569.89,107527.2)),sample_prior = "only")
 
-loo(fit_m1,fit_m2)
 
-conditional_effects(fit_m1)
-summary(fit_m2)
-plot(fit_m1)
+
+# conditional_effects(fit_m1)
+# summary(fit_m2)
+# plot(fit_m1)
 ```
-Let's have a look at the output from the model fit_lm2
+Let's have a look at the density estimates from the model fit_m1 vs fit_m2
 ```{r}
-summary(fit_m2)
-plot(fit_m2)
+ggpubr::ggarrange(pp_check(fit_m1), pp_check(fit_m2))
+# plot(fit_m2)
 ```
 
 We have assumed that the treatment has a gaussian distribution. Light blue Plot the posterior predictive values.
 
 ```{r ecfd_overlay }
-pp_check(fit_m2,type="ecdf_overlay")
+ggpubr::ggarrange(pp_check(fit_m1,type="ecdf_overlay",ndraws = 50),pp_check(fit_m2,type="ecdf_overlay",ndraws = 50))
 
 ```
 
@@ -227,8 +227,27 @@ color_scheme_set("red")
 bayesplot::ppc_dens_overlay(y = (fit_m2$data$conc),
                  yrep = posterior_predict(fit_m2, draws = 5))
 ```
+### Model selection  
+
+Efficient approximate leave-one-out cross-validation (LOO)
+
+```{r}
+#Model with Gamma respones
+(loo1 <- loo(fit_m1))
 
 
+#Model with log-normal response
+(loo2 <- loo(fit_m2))   
+
+# compare both models
+loo_compare(loo1, loo2) 
+
+
+```
+
+Loo suggests that the lognormal response is a marginally better fit than the Gamma.
+
+#### Old test
 Epilepsy data
 
 ```{r}
