@@ -1,0 +1,212 @@
+---
+title: "ABC"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve)
+```
+
+# ABC vanilla
+
+## Import the data
+
+
+```{r data import}
+df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names() %>% select(-1) %>% 
+  mutate(treatment=as.factor(treatment),
+         group=as.factor(group))
+df
+```
+
+
+## Distance funcion
+
+You can include R code in the document as follows:
+
+```{r distance}
+Distance<-function(x,y,s){  # computes the Euclidean distance between two lists of the same length
+  if (length(x) == length(y)){
+    sqrt(sum(((x)-(y))/(s))^2)
+              }
+  else{
+    print( 'lists not the same length')}
+}
+```
+
+## ODE function
+```{r ODE function}
+ode_model <- function(time_space, initial_contamination, parameters){
+  with(
+    as.list(c(initial_contamination, parameters)),{
+      dContamination <- Contamination*r*(1-Contamination/C)-d*exp(-g*time_space)*Contamination
+      return(list(dContamination))
+    }
+  )
+}
+```
+
+## Deterministic run function
+
+```{r deterministic run function}
+
+deterministic_run<-function(precision,initial_contamination,parameters){
+  tmax = 24
+  time_space = seq(0, tmax, length.out = precision+1)
+
+#sim=odeint(ode_model,initial_contamination,time_space,args=(r,C,d,g,l))
+#parameters=c(r,C,d,g,l)
+sim<- ode(initial_contamination, time_space, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
+#num_at_0=sim[int(precision*0.1/50.0)]
+num_at_1=sim[(precision*1/50.0),2]
+num_at_2=sim[(precision*2/50.0),2]
+num_at_4=sim[(precision*4/50.0),2]
+num_at_6=sim[(precision*6/50.0),2]
+num_at_16=sim[(precision*16/50.0),2]
+num_at_18=sim[(precision*18/50.0),2]
+num_at_20=sim[(precision*20/50.0),2]
+num_at_22=sim[(precision*22/50.0),2]
+num_at_24=sim[(precision*24/50.0),2]
+
+
+return(cbind(num_at_1,num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
+}
+```
+
+Initial data to input into the algorithm
+```{r}
+df %>% 
+  group_by(treatment,group,time) %>% 
+  summarise(M=mean(conc),S=sd(conc))
+  filter(treatment=="Treated") %>% 
+  select(time) 
+```
+
+
+# Run the code
+
+```{r}
+##################################################################################################################
+## Applying the ABC rejection algorithm
+initial_contamination=c(Contamination=20560) #median 34
+experimental_data = c(1200,134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
+s=c(385.22721,93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
+sample_size = 500
+#parameter_sample <- c()
+parameter_sample<- matrix(data=NA,nrow=1,ncol=5)
+total_trials=0  #Starts the counter of run trials
+accepted_trials=0 #Starts the counter for accepted trial numbers, don't change
+
+# Files with posteriors
+# Posterior_r = open("Posterior_r.txt","w")
+# Posterior_C = open("Posterior_C.txt","w")
+# Posterior_d = open("Posterior_d.txt","w")
+# Posterior_g = open("Posterior_g.txt","w")
+# Posterior_l = open("Posterior_l.txt","w")
+distances<-c()
+
+precision=5000 #this is delta t
+# library(foreach)
+# library(doParallel)
+# cores=detectCores()
+# cl <- makeCluster(cores[1]-1) #not to overload your computer
+# registerDoParallel(cl)
+while (NROW(parameter_sample) < sample_size){
+#foreach(total_trials=1:2, .packages=c("deSolve")) %dopar% {
+  
+  # The prior distributions we use are d ~ U(0.001,10.0), C ~ U(200,1200), r ~ U(0.001,1.0), g ~ U(0.001,1.0). 
+  # We begin by sampling from these distributions and simulating the process
+trial_r = runif(1,1E-1,1e4)
+trial_C = runif(1,1,5e4)
+trial_d = runif(1,1,1e4)
+trial_g = runif(1,1E-2,1e4)
+trial_l = runif(1,1E-5,1e4)
+total_trials=total_trials+1.0
+#print(total_trials)
+parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g,l=trial_l)
+
+
+one_run = deterministic_run(precision,initial_contamination,parameters)#
+
+#experimental_data_noP2 = [652.0, 556.0, 424.5, 467.5, 428.0, 550.0, 672.0]
+
+# Now we find the Euclidean distance between the simulated output and the
+# experimental results. delta is the threshold that the Euclidean distance
+# must be less than for us to accept the trial parameters into our sample.
+delta = 2681 #dictates distance
+euclidean_distance = abs(dist(rbind(one_run,experimental_data))) #Distance(one_run, experimental_data,s)#_noP2)
+#print(euclidean_distance)# print(parameter_sample,euclidean_distance)
+#print(total_trials)
+
+if (euclidean_distance < delta){
+  #parameter_sample = parameter_sample[!is.na(parameter_sample)];
+  parameter_sample=rbind(parameter_sample, c(trial_r,trial_C,trial_d,trial_g,trial_l))
+  distances=rbind(distances,euclidean_distance)
+  accepted_trials=accepted_trials+1.0
+  print(paste0("Trial number accepted: ",accepted_trials))
+}
+  #else{
+  #  print(euclidean_distance)
+  #  }
+
+}
+
+
+print(paste0("Percentage of trials accepted: ",(100*accepted_trials/total_trials)))
+#Order the distances and then the parameter sample
+parameter_sample<-parameter_sample[order(distances), ]
+parameter_sample<-parameter_sample%>%as.data.frame()#%>%set_colnames(c("r", "C", "d","g","l"))
+colnames(parameter_sample)<-c("r", "C", "d","g","l")
+#stopImplicitCluster()
+
+# Posterior_r.write(str(trial_r))
+# Posterior_r.write("\n")
+# Posterior_C.write(str(trial_C))
+# Posterior_C.write("\n")
+# Posterior_d.write(str(trial_d))
+# Posterior_d.write("\n")
+# Posterior_g.write(str(trial_g))
+# Posterior_g.write("\n")
+# Posterior_l.write(str(trial_l))
+# Posterior_l.write("\n")
+#print(parameter_sample) #This prints all the values accepted
+
+
+#write.csv(parameter_sample,"parameter_sample_Alcohol.csv",row.names = FALSE)
+
+
+```
+# Plot histograms
+```{r}
+parameter_sample %>% 
+  pivot_longer(c(r,C,d,g,l)) %>% 
+  ggplot()+
+  geom_histogram(aes(x=value,fill=name))+
+  facet_wrap(~name,scales="free")+
+  hrbrthemes::theme_ipsum()
+
+```
+
+
+# Plotting against analytical
+```{r}
+## Plotting a single best curve
+
+
+tmax = 24
+time_space = seq(0, tmax, length.out = precision+1)
+
+sim1<-ode(initial_contamination, time_space, ode_model, parameter_sample[1,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim2<-ode(initial_contamination, time_space, ode_model, parameter_sample[2,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim3<-ode(initial_contamination, time_space, ode_model, parameter_sample[3,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim4<-ode(initial_contamination, time_space, ode_model, parameter_sample[4,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim<-rbind(sim1[,c(1,2)],sim2[,c(1,2)],sim3[,c(1,2)],sim4[,c(1,2)])%>%as.data.frame()
+sim$CurveNum<-rep(1:4,each=nrow(sim1))
+#lines(sim,col="blue")
+sim<-sim%>%as.data.frame()%>%set_colnames(c("Time","Contamination","CurveNum"))
+df<- read_csv("~/Downloads/SurfaceCleaning/Data/cleaningExptBeth.csv")#data.frame(Time=c(0,1,2,4,8,24),Contamination=c(initial_contamination,experimental_data))
+df<-df[,-2]%>%set_colnames(c("Contamination","CleaningType","Time","Replica"))
+df$CleaningType<-factor(df$CleaningType, levels = c("Control","Alcohol","Detergent", "Distilled Water"))
+```
+
