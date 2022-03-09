@@ -1,0 +1,29 @@
+---
+title: "EasyABC"
+author: "MFK"
+date: "09/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,abc,EasyABC)
+```
+
+
+# Import experimental data
+```{r}
+
+```
+
+# Model 
+```{r}
+
+```
+
+# Easy ABC
+```{r}
+
+
+```
+
