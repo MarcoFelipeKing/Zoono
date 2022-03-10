@@ -14,10 +14,10 @@ pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,furrr,p
 
 
 ```{r data import}
-df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names() %>% select(-1) %>% 
+df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names()  %>% 
   mutate(treatment=as.factor(treatment),
          group=as.factor(group))
-df
+df 
 ```
 
 
@@ -131,7 +131,7 @@ one_run = deterministic_run(precision,initial_contamination,parameters)#
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 50 #dictates distance
+delta = 0.25 #dictates distance
 euclidean_distance = Distance(one_run, experimental_data,s)#abs(dist(rbind(one_run,experimental_data))) #Distance(one_run, experimental_data,s)#_noP2)
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
@@ -174,7 +174,8 @@ colnames(parameter_sample)<-c("r", "C", "d","g","l")
 # registerDoParallel(cl)
 
 simulate_function<-function(a){
-  set.seed(a)
+  # set.seed(seed = TRUE)
+  .Random.seed <- a
   #set up empty distances vector
   distances<-c()
   precision=5000 #this is delta t
@@ -213,14 +214,14 @@ one_run = deterministic_run(precision,initial_contamination,parameters)#
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 20 #dictates distance
+delta = 1 #dictates distance
 euclidean_distance = Distance(one_run, experimental_data,s)#abs(dist(rbind(one_run,experimental_data))) #Distance(one_run, experimental_data,s)#_noP2)
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
 
 if (euclidean_distance < delta){
   #parameter_sample = parameter_sample[!is.na(parameter_sample)];
-  parameter_sample=rbind(parameter_sample, c(trial_r,trial_C,trial_d,trial_g,trial_l),euclidean_distance)
+  parameter_sample=rbind(parameter_sample, c(trial_r,trial_C,trial_d,trial_g,trial_l))
   distances=rbind(distances,euclidean_distance)
   accepted_trials=accepted_trials+1.0
   print(paste0("Trial number accepted: ",accepted_trials))
@@ -233,8 +234,9 @@ if (euclidean_distance < delta){
   
 parameter_sample<-parameter_sample[order(distances), ]
 parameter_sample<-parameter_sample%>%as.data.frame()#%>%set_colnames(c("r", "C", "d","g","l"))
-colnames(parameter_sample)<-c("r", "C", "d","g","l","distance")
-return(parameter_sample)
+colnames(parameter_sample)<-c("r", "C", "d","g","l")
+# return(parameter_sample)
+return(list("parameter_sample" = parameter_sample, "distances" = distances))
 }
 
 # Parallel implementation
@@ -250,6 +252,10 @@ return(parameter_sample)
 
 plan(multisession, workers = 4)
 # temp.list<-lapply(X = 1:4,FUN = simulate_function)
+
+RNGkind("L'Ecuyer-CMRG")
+set.seed(42)
+seeds <- list(.Random.seed)
 temp.list<-future_map(.x = 1:4,.f = simulate_function)
 
 # Reset to running sequentially
@@ -270,7 +276,7 @@ plan(sequential)
 parameter_sample %>% 
   pivot_longer(c(r,C,d,g,l)) %>% 
   ggplot()+
-  geom_histogram(aes(x=value,fill=name))
+  geom_histogram(aes(x=value,fill=name))+
   facet_wrap(~name,scales="free")+
   hrbrthemes::theme_ipsum()
 
