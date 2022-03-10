@@ -5,7 +5,7 @@ output: github_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,furrr,purr)
+pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,furrr,purrr)
 ```
 
 # ABC vanilla
@@ -41,7 +41,8 @@ Distance<-function(x,y,s){  # computes the Euclidean distance between two lists 
 ode_model <- function(time_space, initial_contamination, parameters){
   with(
     as.list(c(initial_contamination, parameters)),{
-      dContamination <- Contamination*r*(1-Contamination/C)-d*exp(-g*time_space)*Contamination
+      # dContamination <- Contamination*r*(1-Contamination/C)-d*exp(-g*time_space)*Contamination
+      dContamination <- (1-Contamination/C)*r-d*exp(-g*time_space)*Contamination
       return(list(dContamination))
     }
   )
@@ -85,6 +86,7 @@ df %>%
 ```
 
 
+
 # Run the ABC Rejection Code
 
 ```{r}
@@ -93,7 +95,7 @@ df %>%
 initial_contamination=c(Contamination=1200) #median 34
 experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
 s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
-sample_size = 500
+sample_size = 1000
 #parameter_sample <- c()
 parameter_sample<- matrix(data=NA,nrow=1,ncol=5)
 total_trials=0  #Starts the counter of run trials
@@ -131,7 +133,7 @@ one_run = deterministic_run(precision,initial_contamination,parameters)#
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 0.25 #dictates distance
+delta = 1 #dictates distance
 euclidean_distance = Distance(one_run, experimental_data,s)#abs(dist(rbind(one_run,experimental_data))) #Distance(one_run, experimental_data,s)#_noP2)
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
@@ -158,11 +160,12 @@ colnames(parameter_sample)<-c("r", "C", "d","g","l")
 #stopImplicitCluster()
 
 
-#write.csv(parameter_sample,"parameter_sample_Alcohol.csv",row.names = FALSE)
-
+write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
+write.csv(distances,"../Data/distances.csv",row.names = FALSE)
 
 ```
 
+This is the parallel implementation usingg the furrrr framework with 4 worker cores
 ```{r parallel implementation with furrr}
 ##################################################################################################################
 ## Applying the ABC rejection algorithm
@@ -184,7 +187,7 @@ simulate_function<-function(a){
   initial_contamination=c(Contamination=1200) #median 34
   experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
   s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
-  sample_size = 10
+  sample_size = 100
   #parameter_sample <- c()
   parameter_sample<- matrix(data=NA,nrow=1,ncol=5)
   total_trials=0  #Starts the counter of run trials
@@ -262,14 +265,33 @@ temp.list<-future_map(.x = 1:4,.f = simulate_function)
 plan(sequential)
 
 
-
+temp.list
 
 
 #write.csv(parameter_sample,"parameter_sample_Alcohol.csv",row.names = FALSE)
 
-
-
 ```
+
+# Extract distances and parameter samples
+```{r extract parameter samples}
+temp.list %>% 
+  bind_rows() %>% 
+  select(parameter_sample) %>% 
+  unnest() %>% 
+  drop_na() %>% 
+   pivot_longer(c(r,C,d,g,l)) %>% 
+  ggplot()+
+  geom_histogram(aes(x=value,fill=name))+
+  facet_wrap(~name,scales="free")+
+  hrbrthemes::theme_ipsum()
+
+temp.list %>% 
+  bind_rows() %>% 
+  select(parameter_sample) %>% 
+  unnest() %>% 
+  drop_na() ->parameter_sample
+```
+
 
 # Plot histograms
 ```{r}
@@ -289,10 +311,12 @@ write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 # Plot example curves against experimetnal data
 ```{r}
 ## Plotting a single best curve
-
+  initial_contamination=c(Contamination=1200) #median 34
+  experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
+  s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
 
 tmax = 24
-time_space = seq(0, tmax, length.out = precision+1)
+time_space = seq(0, tmax, length.out = 5000+1)
 
 sim1<-ode(initial_contamination, time_space, ode_model, parameter_sample[1,], method = "radau",atol = 1e-4, rtol = 1e-4)
 sim2<-ode(initial_contamination, time_space, ode_model, parameter_sample[2,], method = "radau",atol = 1e-4, rtol = 1e-4)
@@ -309,10 +333,13 @@ colnames(sim)<-c("Time","Contamination","CurveNum")
 
 
 ggplot()+
-  geom_line(data=sim1 %>% as_tibble(),aes(x=time,y=Contamination))+
+  geom_line(data=sim %>% as_tibble(),aes(x=Time,y=Contamination,colour=as.factor(CurveNum)))+
   geom_point(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc))+
   scale_y_continuous(trans="log10")+
-  hrbrthemes::theme_ipsum()
+  hrbrthemes::theme_ipsum()+
+   theme(legend.position = "none")
 
+distances %>% as_tibble %>% 
+  separate(V1,into = c(NA,"V1"),sep=" ")
 ```
 
