@@ -133,7 +133,7 @@ one_run = deterministic_run(precision,initial_contamination,parameters)#
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 2250 #dictates distance
+delta = 1800 #dictates distance
 euclidean_distance = abs(dist(rbind(one_run,experimental_data)))#Distance(one_run, experimental_data,s) #Distance(one_run, experimental_data,s)#_noP2)
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
