@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,abc,EasyABC)
+pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,abc,EasyABC)
 ```
 
 
@@ -18,12 +18,28 @@ pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,abc,Eas
 
 # Model 
 ```{r}
-
+ode_model <- function(time_space, initial_contamination, parameters){
+  with(
+    as.list(c(initial_contamination, parameters)),{
+      dContamination <- (1-Contamination/C)*r-d*exp(-g*time_space)*Contamination
+      return(list(dContamination))
+    }
+  )
+}
 ```
 
 # Easy ABC
 ```{r}
+n=10
+pacc=0.4
 
+trait_prior=list(c("unif",1e-1,1e2),c("unif",1,3e3),
++ c("unif",1e-2,1e2), c("unif",1e-2,1e2))
 
+sum_stat_obs=c(134,202,294,400,644,1232,2044,2868)
+
+ABC_Lenormand<-ABC_sequential(method="Lenormand", model=ode_model,
++ prior=trait_prior, nb_simul=n, summary_stat_target=sum_stat_obs,
++ p_acc_min=pacc, use_seed=TRUE)
 ```
 

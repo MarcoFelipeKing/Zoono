@@ -55,21 +55,21 @@ ode_model <- function(time_space, initial_contamination, parameters){
 
 deterministic_run<-function(precision,initial_contamination,parameters){
   tmax = 24
-  time_space = seq(0, tmax, length.out = precision+1)
+  time_space = seq(0, tmax, length.out = precision) #precision+1
 
 #sim=odeint(ode_model,initial_contamination,time_space,args=(r,C,d,g,l))
 #parameters=c(r,C,d,g,l)
 sim<- ode(initial_contamination, time_space, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
 # num_at_0=sim[int(precision*0.1/50.0)]
 # num_at_1=sim[(precision*1/50.0),2]
-num_at_2=sim[(precision*2/50.0),2]
-num_at_4=sim[(precision*4/50.0),2]
-num_at_6=sim[(precision*6/50.0),2]
-num_at_16=sim[(precision*16/50.0),2]
-num_at_18=sim[(precision*18/50.0),2]
-num_at_20=sim[(precision*20/50.0),2]
-num_at_22=sim[(precision*22/50.0),2]
-num_at_24=sim[(precision*24/50.0),2]
+num_at_2=sim[(precision*2/tmax),2]
+num_at_4=sim[(precision*4/tmax),2]
+num_at_6=sim[(precision*6/tmax),2]
+num_at_16=sim[(precision*16/tmax),2]
+num_at_18=sim[(precision*18/tmax),2]
+num_at_20=sim[(precision*20/tmax),2]
+num_at_22=sim[(precision*22/tmax),2]
+num_at_24=sim[(precision*24/tmax),2]
 
 
 return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
@@ -111,15 +111,15 @@ precision=5000 #this is delta t
 # cores=detectCores()
 # cl <- makeCluster(cores[1]-1) #not to overload your computer
 # registerDoParallel(cl)
-while (NROW(parameter_sample) < sample_size){
+while (NROW(parameter_sample) <= sample_size){
 #foreach(total_trials=1:2, .packages=c("deSolve")) %dopar% {
   
   # The prior distributions we use are d ~ U(0.001,10.0), C ~ U(200,1200), r ~ U(0.001,1.0), g ~ U(0.001,1.0). 
   # We begin by sampling from these distributions and simulating the process
 trial_r = runif(1,1E-1,1e2)
-trial_C = runif(1,1,3e3)
-trial_d = runif(1,1,1e2)
-trial_g = runif(1,1E-2,1e2)
+trial_C = runif(1,1e3,6e3)
+trial_d = runif(1,1,2e2)
+trial_g = runif(1,1,2e2)
 trial_l = runif(1,1E-5,1e2)
 total_trials=total_trials+1.0
 #print(total_trials)
@@ -133,8 +133,8 @@ one_run = deterministic_run(precision,initial_contamination,parameters)#
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 1 #dictates distance
-euclidean_distance = Distance(one_run, experimental_data,s)#abs(dist(rbind(one_run,experimental_data))) #Distance(one_run, experimental_data,s)#_noP2)
+delta = 2250 #dictates distance
+euclidean_distance = abs(dist(rbind(one_run,experimental_data)))#Distance(one_run, experimental_data,s) #Distance(one_run, experimental_data,s)#_noP2)
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
 
@@ -165,6 +165,7 @@ write.csv(distances,"../Data/distances.csv",row.names = FALSE)
 
 ```
 
+# Parallel version
 This is the parallel implementation usingg the furrrr framework with 4 worker cores
 ```{r parallel implementation with furrr}
 ##################################################################################################################
@@ -272,7 +273,7 @@ temp.list
 
 ```
 
-# Extract distances and parameter samples
+# Extract distances and parameter samples - Parallel
 ```{r extract parameter samples}
 temp.list %>% 
   bind_rows() %>% 
@@ -294,13 +295,15 @@ temp.list %>%
 
 
 # Plot histograms
-```{r}
+```{r histograms}
 parameter_sample %>% 
   pivot_longer(c(r,C,d,g,l)) %>% 
+  filter(name!="l") %>% 
   ggplot()+
   geom_histogram(aes(x=value,fill=name))+
   facet_wrap(~name,scales="free")+
   hrbrthemes::theme_ipsum()
+  theme(legend.title = "none")
 
 parameter_sample %>% summary()
 
@@ -309,7 +312,7 @@ write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 
 
 # Plot example curves against experimetnal data
-```{r}
+```{r curves}
 ## Plotting a single best curve
   initial_contamination=c(Contamination=1200) #median 34
   experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
@@ -335,11 +338,23 @@ colnames(sim)<-c("Time","Contamination","CurveNum")
 ggplot()+
   geom_line(data=sim %>% as_tibble(),aes(x=Time,y=Contamination,colour=as.factor(CurveNum)))+
   geom_point(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc))+
+  stat_summary(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),fun.data = "mean_cl_boot", colour = "red", size = 2)+
   scale_y_continuous(trans="log10")+
   hrbrthemes::theme_ipsum()+
    theme(legend.position = "none")
 
-distances %>% as_tibble %>% 
-  separate(V1,into = c(NA,"V1"),sep=" ")
+# distances %>% as_tibble %>% 
+#   separate(V1,into = c(NA,"V1"),sep=" ")
+```
+```{r}
+p<-ode(initial_contamination, time_space, ode_model, c(r=100,C=10555,d=5055,g=55,l=90), method = "radau",atol = 1e-4, rtol = 1e-4)
+
+one_run=deterministic_run(precision,initial_contamination,c(r=100,C=10555,d=5055,g=55,l=90)) %>% as_tibble()
+one_run<-cbind(c(2,4,6,16,18,20,22,24),t(one_run)) %>% as_tibble()
+ggplot()+
+  geom_line(data=p %>% as_tibble(),aes(x=time,y=Contamination))+
+   geom_point(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),alpha=0.5)+
+    geom_point(data=one_run,aes(x=V1,y=V2),colour="red",shape=24,size=4)
+  # geom_point(data=tibble(x=c(2,4,6,16,18,20,22,24),y=experimental_data),aes(x=x,y=y))
 ```
 
