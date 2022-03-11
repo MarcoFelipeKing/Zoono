@@ -3,7 +3,7 @@ title: "ABC"
 output: github_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,furrr,purrr)
 ```
@@ -17,7 +17,7 @@ pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,furrr,p
 df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names()  %>% 
   mutate(treatment=as.factor(treatment),
          group=as.factor(group))
-df 
+df %>% glimpse() 
 ```
 
 
@@ -54,25 +54,25 @@ ode_model <- function(time_space, initial_contamination, parameters){
 ```{r deterministic run function}
 
 deterministic_run<-function(precision,initial_contamination,parameters){
-  tmax = 24
+  tmax = 6
   time_space = seq(0, tmax, length.out = precision) #precision+1
 
 #sim=odeint(ode_model,initial_contamination,time_space,args=(r,C,d,g,l))
 #parameters=c(r,C,d,g,l)
 sim<- ode(initial_contamination, time_space, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
 # num_at_0=sim[int(precision*0.1/50.0)]
-# num_at_1=sim[(precision*1/50.0),2]
+num_at_1=sim[(precision*0.1/tmax),2]
 num_at_2=sim[(precision*2/tmax),2]
 num_at_4=sim[(precision*4/tmax),2]
 num_at_6=sim[(precision*6/tmax),2]
-num_at_16=sim[(precision*16/tmax),2]
-num_at_18=sim[(precision*18/tmax),2]
-num_at_20=sim[(precision*20/tmax),2]
-num_at_22=sim[(precision*22/tmax),2]
-num_at_24=sim[(precision*24/tmax),2]
+# num_at_16=sim[(precision*16/tmax),2]
+# num_at_18=sim[(precision*18/tmax),2]
+# num_at_20=sim[(precision*20/tmax),2]
+# num_at_22=sim[(precision*22/tmax),2]
+# num_at_24=sim[(precision*24/tmax),2]
 
-
-return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
+return(cbind(num_at_1,num_at_2,num_at_4,num_at_6))
+# return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
 }
 ```
 
@@ -87,7 +87,7 @@ df %>%
 
 
 
-# Run the ABC Rejection Code
+# Run the ABC Rejection Code - Serial
 
 ```{r}
 ##################################################################################################################
@@ -97,7 +97,7 @@ experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
 s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
 sample_size = 1000
 #parameter_sample <- c()
-parameter_sample<- matrix(data=NA,nrow=1,ncol=5)
+parameter_sample<- matrix(data=NA,nrow=1,ncol=4)
 total_trials=0  #Starts the counter of run trials
 accepted_trials=0 #Starts the counter for accepted trial numbers, don't change
 
@@ -120,10 +120,10 @@ trial_r = runif(1,1E-1,1e2)
 trial_C = runif(1,1e3,6e3)
 trial_d = runif(1,1,2e2)
 trial_g = runif(1,1,2e2)
-trial_l = runif(1,1E-5,1e2)
+# trial_l = runif(1,1E-5,1e2)
 total_trials=total_trials+1.0
 #print(total_trials)
-parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g,l=trial_l)
+parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g)
 
 
 one_run = deterministic_run(precision,initial_contamination,parameters)#
@@ -140,7 +140,7 @@ euclidean_distance = abs(dist(rbind(one_run,experimental_data)))#Distance(one_ru
 
 if (euclidean_distance < delta){
   #parameter_sample = parameter_sample[!is.na(parameter_sample)];
-  parameter_sample=rbind(parameter_sample, c(trial_r,trial_C,trial_d,trial_g,trial_l))
+  parameter_sample=rbind(parameter_sample, c(trial_r,trial_C,trial_d,trial_g))
   distances=rbind(distances,euclidean_distance)
   accepted_trials=accepted_trials+1.0
   print(paste0("Trial number accepted: ",accepted_trials))
@@ -156,7 +156,7 @@ print(paste0("Percentage of trials accepted: ",(100*accepted_trials/total_trials
 #Order the distances and then the parameter sample
 parameter_sample<-parameter_sample[order(distances), ]
 parameter_sample<-parameter_sample%>%as.data.frame()#%>%set_colnames(c("r", "C", "d","g","l"))
-colnames(parameter_sample)<-c("r", "C", "d","g","l")
+colnames(parameter_sample)<-c("r", "C", "d","g")
 #stopImplicitCluster()
 
 
@@ -185,12 +185,12 @@ simulate_function<-function(a){
   precision=5000 #this is delta t
   
   #Experimental data
-  initial_contamination=c(Contamination=1200) #median 34
-  experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
+  initial_contamination=c(Contamination=20560) #median 34
+  experimental_data = c(1200,134,202,294)#experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
   s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
-  sample_size = 100
+  sample_size = 50
   #parameter_sample <- c()
-  parameter_sample<- matrix(data=NA,nrow=1,ncol=5)
+  parameter_sample<- matrix(data=NA,nrow=1,ncol=4)
   total_trials=0  #Starts the counter of run trials
   accepted_trials=0 #Starts the counter for accepted trial numbers, don't change
 
@@ -202,13 +202,13 @@ while (NROW(parameter_sample) <= sample_size){
   # The prior distributions we use are d ~ U(0.001,10.0), C ~ U(200,1200), r ~ U(0.001,1.0), g ~ U(0.001,1.0). 
   # We begin by sampling from these distributions and simulating the process
 trial_r = runif(1,1E-1,1e2)
-trial_C = runif(1,1,3e3)
-trial_d = runif(1,1,1e2)
-trial_g = runif(1,1E-2,1e2)
-trial_l = runif(1,1E-5,1e2)
+trial_C = runif(1,1e3,6e3)
+trial_d = runif(1,1,2e2)
+trial_g = runif(1,1,2e2)
+# trial_l = runif(1,1E-5,1e2)
 total_trials=total_trials+1.0
 #print(total_trials)
-parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g,l=trial_l)
+parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g)
 
 
 one_run = deterministic_run(precision,initial_contamination,parameters)#
@@ -218,17 +218,17 @@ one_run = deterministic_run(precision,initial_contamination,parameters)#
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 1 #dictates distance
-euclidean_distance = Distance(one_run, experimental_data,s)#abs(dist(rbind(one_run,experimental_data))) #Distance(one_run, experimental_data,s)#_noP2)
+delta = 1000#dictates distance
+euclidean_distance = abs(dist(rbind(one_run,experimental_data)))#Distance(one_run, experimental_data,s)# #Distance(one_run, experimental_data,s)#_noP2)
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
 
 if (euclidean_distance < delta){
   #parameter_sample = parameter_sample[!is.na(parameter_sample)];
-  parameter_sample=rbind(parameter_sample, c(trial_r,trial_C,trial_d,trial_g,trial_l))
+  parameter_sample=rbind(parameter_sample, c(trial_r,trial_C,trial_d,trial_g))
   distances=rbind(distances,euclidean_distance)
   accepted_trials=accepted_trials+1.0
-  print(paste0("Trial number accepted: ",accepted_trials))
+  # print(paste0("Trial number accepted: ",accepted_trials))
 }
   #else{
   #  print(euclidean_distance)
@@ -236,11 +236,16 @@ if (euclidean_distance < delta){
 
 }
   
+# parameter_sample<-cbind(parameter_sample,distances)
 parameter_sample<-parameter_sample[order(distances), ]
 parameter_sample<-parameter_sample%>%as.data.frame()#%>%set_colnames(c("r", "C", "d","g","l"))
-colnames(parameter_sample)<-c("r", "C", "d","g","l")
+colnames(parameter_sample)<-c("r", "C", "d","g")
 # return(parameter_sample)
-return(list("parameter_sample" = parameter_sample, "distances" = distances))
+print(paste("Summary of distances: ",distances %>% summary()))
+print(paste("Percentage of accepted trials: ",accepted_trials/total_trials*100))
+
+return(parameter_sample)
+# return(list("parameter_sample" = parameter_sample, "distances" = distances))
 }
 
 # Parallel implementation
@@ -268,42 +273,46 @@ plan(sequential)
 
 temp.list
 
-
-#write.csv(parameter_sample,"parameter_sample_Alcohol.csv",row.names = FALSE)
+temp.list %>%
+  bind_rows() %>% 
+  # select(parameter_sample) %>% 
+  drop_na() %>% 
+  unnest()  ->parameter_sample
+write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 
 ```
 
 # Extract distances and parameter samples - Parallel
 ```{r extract parameter samples}
-temp.list %>% 
+# lapply(temp.list, function(x) x[(names(x) %in% c("r", "C","d","g"))])->tst
+# pp %>% purrr::pluck(1)
+
+temp.list %>%
   bind_rows() %>% 
-  select(parameter_sample) %>% 
-  unnest() %>% 
+  # select(parameter_sample) %>% 
   drop_na() %>% 
-   pivot_longer(c(r,C,d,g,l)) %>% 
+  pivot_longer(c(r,C,d,g)) %>% 
   ggplot()+
   geom_histogram(aes(x=value,fill=name))+
   facet_wrap(~name,scales="free")+
   hrbrthemes::theme_ipsum()
 
-temp.list %>% 
-  bind_rows() %>% 
-  select(parameter_sample) %>% 
-  unnest() %>% 
-  drop_na() ->parameter_sample
+
+
+
+
 ```
 
 
 # Plot histograms
 ```{r histograms}
 parameter_sample %>% 
-  pivot_longer(c(r,C,d,g,l)) %>% 
-  filter(name!="l") %>% 
+  pivot_longer(c(r,C,d,g)) %>% 
+  # filter(name!="l") %>% 
   ggplot()+
   geom_histogram(aes(x=value,fill=name))+
   facet_wrap(~name,scales="free")+
   hrbrthemes::theme_ipsum()
-  theme(legend.title = "none")
 
 parameter_sample %>% summary()
 
@@ -314,11 +323,11 @@ write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 # Plot example curves against experimetnal data
 ```{r curves}
 ## Plotting a single best curve
-  initial_contamination=c(Contamination=1200) #median 34
-  experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
-  s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
+  # initial_contamination=c(Contamination=1200) #median 34
+  # experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
+  # s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
 
-tmax = 24
+tmax = 6
 time_space = seq(0, tmax, length.out = 5000+1)
 
 sim1<-ode(initial_contamination, time_space, ode_model, parameter_sample[1,], method = "radau",atol = 1e-4, rtol = 1e-4)
@@ -337,15 +346,18 @@ colnames(sim)<-c("Time","Contamination","CurveNum")
 
 ggplot()+
   geom_line(data=sim %>% as_tibble(),aes(x=Time,y=Contamination,colour=as.factor(CurveNum)))+
-  geom_point(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc))+
-  stat_summary(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),fun.data = "mean_cl_boot", colour = "red", size = 2)+
-  scale_y_continuous(trans="log10")+
+  geom_point(data=df %>% filter(treatment=="Treated" & time <10),aes(x=time,y=conc))+
+  # stat_summary(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),fun.data = "mean_cl_boot", colour = "red", size = 2)+
+  # scale_y_continuous(trans="log")+
+  scale_y_continuous(trans="log")+
   hrbrthemes::theme_ipsum()+
    theme(legend.position = "none")
 
 # distances %>% as_tibble %>% 
 #   separate(V1,into = c(NA,"V1"),sep=" ")
 ```
+#Quick check 
+
 ```{r}
 p<-ode(initial_contamination, time_space, ode_model, c(r=100,C=10555,d=5055,g=55,l=90), method = "radau",atol = 1e-4, rtol = 1e-4)
 
@@ -358,3 +370,16 @@ ggplot()+
   # geom_point(data=tibble(x=c(2,4,6,16,18,20,22,24),y=experimental_data),aes(x=x,y=y))
 ```
 
+# GGally - GGpairs
+
+
+```{r}
+
+parameter_sample %>% 
+  # pivot_longer(c(r,C,d,g)) %>% 
+  # filter(name!="l") %>% 
+  GGAlly::ggpairs()+
+  hrbrthemes::theme_ipsum()
+```
+
+# TODO Modelar segundo cacho y ver si r explica

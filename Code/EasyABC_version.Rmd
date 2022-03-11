@@ -13,6 +13,9 @@ pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,abc,EasyABC)
 
 # Import experimental data
 ```{r}
+initial_contamination=c(Contamination=1200) #median 34
+experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
+s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
 
 ```
 
@@ -26,6 +29,31 @@ ode_model <- function(time_space, initial_contamination, parameters){
     }
   )
 }
+
+
+deterministic_run<-function(precision=5000, initial_contamination=1200, parameters){
+  tmax = 24
+  time_space = seq(0, tmax, length.out = precision) #precision+1
+
+#sim=odeint(ode_model,initial_contamination,time_space,args=(r,C,d,g,l))
+#parameters=c(r,C,d,g,l)
+sim<- ode(initial_contamination, time_space, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
+# num_at_0=sim[int(precision*0.1/50.0)]
+# num_at_1=sim[(precision*1/50.0),2]
+num_at_2=sim[(precision*2/tmax),2]
+num_at_4=sim[(precision*4/tmax),2]
+num_at_6=sim[(precision*6/tmax),2]
+num_at_16=sim[(precision*16/tmax),2]
+num_at_18=sim[(precision*18/tmax),2]
+num_at_20=sim[(precision*20/tmax),2]
+num_at_22=sim[(precision*22/tmax),2]
+num_at_24=sim[(precision*24/tmax),2]
+
+
+return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
+}
+
+
 ```
 
 # Easy ABC
@@ -33,13 +61,36 @@ ode_model <- function(time_space, initial_contamination, parameters){
 n=10
 pacc=0.4
 
-trait_prior=list(c("unif",1e-1,1e2),c("unif",1,3e3),
-+ c("unif",1e-2,1e2), c("unif",1e-2,1e2))
+# trial_r = runif(1,1E-1,1e2)
+# trial_C = runif(1,1e3,6e3)
+# trial_d = runif(1,1,2e2)
+# trial_g = runif(1,1,2e2)
 
-sum_stat_obs=c(134,202,294,400,644,1232,2044,2868)
+prior_dist=list(c("unif",1e-1,1e2),c("unif",1e3,6e3), c("unif",1,2e2), c("unif",1,2e2))
 
-ABC_Lenormand<-ABC_sequential(method="Lenormand", model=ode_model,
-+ prior=trait_prior, nb_simul=n, summary_stat_target=sum_stat_obs,
-+ p_acc_min=pacc, use_seed=TRUE)
+sum_stat_obs=c(50,3e3,100,100)#c(134,202,294,400,644,1232,2044,2868)
+
+ABC_Beaumont<-ABC_sequential(method="Beaumont", model=deterministic_run, prior=prior_dist, nb_simul=20, summary_stat_target=sum_stat_obs2, tolerance_tab=tolerance)
+
+ABC_Lenormand<-ABC_sequential(method="Lenormand", model=deterministic_run, prior=trait_prior, nb_simul=n, summary_stat_target=sum_stat_obs,p_acc_min=pacc, use_seed=FALSE)
+```
+
+#Toy model from EASY ABC CRAN pdf
+
+```{r}
+ ## this time, the model has two parameters and outputs two summary statistics.
+## defining a simple toy model:
+toy_model2<-function(x){ c( x[1] + x[2] + rnorm(1,0,0.1) , x[1] * x[2] + rnorm(1,0,0.1) ) }
+        ## define prior information
+toy_prior2=list(c("unif",0,1),c("normal",1,2))
+# a uniform prior distribution between 0 and 1 for parameter 1, and a normal distribution
+        # of mean 1 and standard deviation of 2 for parameter 2.
+        ## define the targeted summary statistics
+sum_stat_obs2=c(1.5,0.5)
+        ## to perform the Beaumont et al. (2009)􏰀s method:
+        ##
+tolerance=c(1.5,0.5)
+# ABC_Beaumont<-ABC_sequential(method="Beaumont", model=toy_model2, prior=toy_prior2, nb_simul=20, summary_stat_target=sum_stat_obs2, tolerance_tab=tolerance)
+ABC_Beaumont<-ABC_sequential(method="Beaumont", model=toy_model2, prior=toy_prior2, nb_simul=20, summary_stat_target=sum_stat_obs2, tolerance_tab=tolerance)
 ```
 
