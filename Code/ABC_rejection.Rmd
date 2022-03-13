@@ -5,7 +5,8 @@ output: github_document
 
 ```{r setup, include=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes,deSolve,furrr,purrr)
+pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr)
+dyn.load("decay_ODE_arm64.so")
 ```
 
 # ABC vanilla
@@ -76,6 +77,31 @@ return(cbind(num_at_1,num_at_2,num_at_4,num_at_6))
 }
 ```
 
+#Compiled C version
+```{r Compiled C ODE}
+deterministic_run_C<-function(precision,initial_contamination,parameters){
+  tmax = 6
+  time_space = seq(0, tmax, length.out = precision) #precision+1
+
+#sim=odeint(ode_model,initial_contamination,time_space,args=(r,C,d,g,l))
+#parameters=c(r,C,d,g,l)
+  # parms <- c(C = 33, d = 100, g=2,r=37);
+Y <-c(y1=initial_contamination) ;
+# sim<- ode(initial_contamination, time_space, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
+sim <- ode(Y, time_space, func = "derivs", parms = parameters, dllname = "decay_ODE", method = "radau",
+           initfunc = "initmod", atol = 1e-4, rtol = 1e-4)
+
+# num_at_0=sim[int(precision*0.1/50.0)]
+# num_at_1=sim[(precision*0.1/tmax),2]
+num_at_2=sim[(precision*2/tmax),2]
+num_at_4=sim[(precision*4/tmax),2]
+num_at_6=sim[(precision*6/tmax),2]
+
+return(cbind(num_at_2,num_at_4,num_at_6))
+# return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
+}
+```
+
 Initial data to input into the algorithm
 ```{r}
 df %>% 
@@ -93,7 +119,7 @@ df %>%
 ##################################################################################################################
 ## Applying the ABC rejection algorithm
 initial_contamination=c(Contamination=1200) #median 34
-experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
+experimental_data = c(134,202,294)#c(11.5,5,2,0,6)#
 s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
 sample_size = 1000
 #parameter_sample <- c()
@@ -123,17 +149,18 @@ trial_g = runif(1,1,2e2)
 # trial_l = runif(1,1E-5,1e2)
 total_trials=total_trials+1.0
 #print(total_trials)
-parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g)
+parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g) #For R code - but it doesn't matter what order they are in.
+one_run = deterministic_run(precision,initial_contamination,parameters)# R code
 
-
-one_run = deterministic_run(precision,initial_contamination,parameters)#
+# parameters <- c(C = trial_C, d = trial_d, g=trial_g,r=trial_r); #For C code
+# one_run = deterministic_run_C(precision,initial_contamination,parameters)# For C code
 
 #experimental_data_noP2 = [652.0, 556.0, 424.5, 467.5, 428.0, 550.0, 672.0]
 
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 1800 #dictates distance
+delta = 240 #dictates distance
 euclidean_distance = abs(dist(rbind(one_run,experimental_data)))#Distance(one_run, experimental_data,s) #Distance(one_run, experimental_data,s)#_noP2)
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
@@ -188,7 +215,7 @@ simulate_function<-function(a){
   initial_contamination=c(Contamination=20560) #median 34
   experimental_data = c(1200,134,202,294)#experimental_data = c(134,202,294,400,644,1232,2044,2868)#c(11.5,5,2,0,6)#
   s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
-  sample_size = 50
+  sample_size = 200
   #parameter_sample <- c()
   parameter_sample<- matrix(data=NA,nrow=1,ncol=4)
   total_trials=0  #Starts the counter of run trials
@@ -208,9 +235,8 @@ trial_g = runif(1,1,2e2)
 # trial_l = runif(1,1E-5,1e2)
 total_trials=total_trials+1.0
 #print(total_trials)
-parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g)
-
-
+parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g) # For R code
+# parameters <- c(C = trial_C, d = trial_d, g=trial_g,r=trial_r); #For C code
 one_run = deterministic_run(precision,initial_contamination,parameters)#
 
 #experimental_data_noP2 = [652.0, 556.0, 424.5, 467.5, 428.0, 550.0, 672.0]
@@ -259,13 +285,13 @@ return(parameter_sample)
 #2 %>% purrr::rerun()
 # Run in parallel
 
-plan(multisession, workers = 4)
+plan(multisession, workers = 6)
 # temp.list<-lapply(X = 1:4,FUN = simulate_function)
 
 RNGkind("L'Ecuyer-CMRG")
 set.seed(42)
 seeds <- list(.Random.seed)
-temp.list<-future_map(.x = 1:4,.f = simulate_function)
+temp.list<-future_map(.x = 1:6,.f = simulate_function)
 
 # Reset to running sequentially
 plan(sequential)
@@ -378,7 +404,7 @@ ggplot()+
 parameter_sample %>% 
   # pivot_longer(c(r,C,d,g)) %>% 
   # filter(name!="l") %>% 
-  GGAlly::ggpairs()+
+  GGally::ggpairs()+
   hrbrthemes::theme_ipsum()
 ```
 

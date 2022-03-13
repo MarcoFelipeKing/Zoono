@@ -15,7 +15,7 @@ void initmod(void (* odeparms)(int *, double *))
 void derivs (int *neq, double *t, double *y, double *ydot,
              double *yout, int *ip)
 {
-  if (ip[0] <1) error("nout should be at least 1");
+// if (ip[0] <1) error("nout should be at least 1");
   ydot[0] = -k1*y[0] + k2*y[1]*y[2];
   ydot[2] = k3 * y[1]*y[1];
   ydot[1] = -ydot[0]-ydot[2];
