@@ -5,8 +5,8 @@ output: github_document
 
 ```{r setup, include=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr)
-dyn.load("decay_ODE_arm64.so")
+pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr,ggpurb)
+dyn.load("testODE.so")
 ```
 
 # ABC vanilla
@@ -39,11 +39,20 @@ Distance<-function(x,y,s){  # computes the Euclidean distance between two lists 
 ## ODE solver function
 
 ```{r ODE function}
-ode_model <- function(time_space, initial_contamination, parameters){
+# ode_model <- function(times, initial_contamination, parameters){
+#   with(
+#     as.list(c(initial_contamination, parameters)),{
+#       # dContamination <- Contamination*r*(1-Contamination/C)-d*exp(-g*times)*Contamination
+#       dContamination <- (1-Contamination/C)*r-d*exp(-g*times)*Contamination
+#       return(list(dContamination))
+#     }
+#   )
+# }
+
+ode_model<- function(t, y, parameters){
   with(
-    as.list(c(initial_contamination, parameters)),{
-      # dContamination <- Contamination*r*(1-Contamination/C)-d*exp(-g*time_space)*Contamination
-      dContamination <- (1-Contamination/C)*r-d*exp(-g*time_space)*Contamination
+    as.list(c(y, parameters)),{
+      dContamination <- (1-Contamination/C)*r -d * exp(-g * t) * Contamination
       return(list(dContamination))
     }
   )
@@ -56,11 +65,11 @@ ode_model <- function(time_space, initial_contamination, parameters){
 
 deterministic_run<-function(precision,initial_contamination,parameters){
   tmax = 6
-  time_space = seq(0, tmax, length.out = precision) #precision+1
+  times = seq(0, tmax, length.out = precision) #precision+1
 
-#sim=odeint(ode_model,initial_contamination,time_space,args=(r,C,d,g,l))
+#sim=odeint(ode_model,initial_contamination,times,args=(r,C,d,g,l))
 #parameters=c(r,C,d,g,l)
-sim<- ode(initial_contamination, time_space, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
+sim<- ode(initial_contamination, times, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
 # num_at_0=sim[int(precision*0.1/50.0)]
 num_at_1=sim[(precision*0.1/tmax),2]
 num_at_2=sim[(precision*2/tmax),2]
@@ -81,15 +90,17 @@ return(cbind(num_at_1,num_at_2,num_at_4,num_at_6))
 ```{r Compiled C ODE}
 deterministic_run_C<-function(precision,initial_contamination,parameters){
   tmax = 6
-  time_space = seq(0, tmax, length.out = precision) #precision+1
+  times = seq(0, tmax, length.out = precision) #precision+1
 
-#sim=odeint(ode_model,initial_contamination,time_space,args=(r,C,d,g,l))
+#sim=odeint(ode_model,initial_contamination,times,args=(r,C,d,g,l))
 #parameters=c(r,C,d,g,l)
   # parms <- c(C = 33, d = 100, g=2,r=37);
-Y <-c(y1=initial_contamination) ;
-# sim<- ode(initial_contamination, time_space, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
-sim <- ode(Y, time_space, func = "derivs", parms = parameters, dllname = "decay_ODE", method = "radau",
-           initfunc = "initmod", atol = 1e-4, rtol = 1e-4)
+Y <-c(Contamination=initial_contamination) ;
+# sim<- ode(initial_contamination, times, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
+# sim <- ode(Y, times, func = "derivs", parms = parameters, dllname = "decay_ODE", method = "radau",
+#            initfunc = "initmod", atol = 1e-4, rtol = 1e-4)
+sim <- ode(initial_contamination, times, func = "derivs", dllname = "testODE", initfunc = "initmod",
+            parms = parameters, method = "radau", atol = 1e-4, rtol = 1e-4)
 
 # num_at_0=sim[int(precision*0.1/50.0)]
 # num_at_1=sim[(precision*0.1/tmax),2]
@@ -144,23 +155,23 @@ while (NROW(parameter_sample) <= sample_size){
   # We begin by sampling from these distributions and simulating the process
 trial_r = runif(1,1E-1,1e2)
 trial_C = runif(1,1e3,6e3)
-trial_d = runif(1,1,2e2)
+trial_d = runif(1,1,1e3)
 trial_g = runif(1,1,2e2)
 # trial_l = runif(1,1E-5,1e2)
 total_trials=total_trials+1.0
 #print(total_trials)
-parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g) #For R code - but it doesn't matter what order they are in.
-one_run = deterministic_run(precision,initial_contamination,parameters)# R code
+# parameters=c(r=trial_r,C=trial_C,d=trial_d,g=trial_g) #For R code - but it doesn't matter what order they are in.
+# one_run = deterministic_run(precision,initial_contamination,parameters)# R code
 
-# parameters <- c(C = trial_C, d = trial_d, g=trial_g,r=trial_r); #For C code
-# one_run = deterministic_run_C(precision,initial_contamination,parameters)# For C code
+parameters <- c(C = trial_C, d = trial_d, g=trial_g,r=trial_r); #For C code
+one_run = deterministic_run_C(precision,initial_contamination,parameters)# For C code
 
 #experimental_data_noP2 = [652.0, 556.0, 424.5, 467.5, 428.0, 550.0, 672.0]
 
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 240 #dictates distance
+delta = 50 #dictates distance
 euclidean_distance = abs(dist(rbind(one_run,experimental_data)))#Distance(one_run, experimental_data,s) #Distance(one_run, experimental_data,s)#_noP2)
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
@@ -354,12 +365,12 @@ write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
   # s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
 
 tmax = 6
-time_space = seq(0, tmax, length.out = 5000+1)
+times = seq(0, tmax, length.out = 5000+1)
 
-sim1<-ode(initial_contamination, time_space, ode_model, parameter_sample[1,], method = "radau",atol = 1e-4, rtol = 1e-4)
-sim2<-ode(initial_contamination, time_space, ode_model, parameter_sample[2,], method = "radau",atol = 1e-4, rtol = 1e-4)
-sim3<-ode(initial_contamination, time_space, ode_model, parameter_sample[3,], method = "radau",atol = 1e-4, rtol = 1e-4)
-sim4<-ode(initial_contamination, time_space, ode_model, parameter_sample[4,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim1<-ode(initial_contamination, times, ode_model, parameter_sample[1,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim2<-ode(initial_contamination, times, ode_model, parameter_sample[2,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim3<-ode(initial_contamination, times, ode_model, parameter_sample[3,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim4<-ode(initial_contamination, times, ode_model, parameter_sample[4,], method = "radau",atol = 1e-4, rtol = 1e-4)
 sim<-rbind(sim1[,c(1,2)],sim2[,c(1,2)],sim3[,c(1,2)],sim4[,c(1,2)])%>%as.data.frame()
 sim$CurveNum<-rep(1:4,each=nrow(sim1))
 #lines(sim,col="blue")
@@ -385,7 +396,7 @@ ggplot()+
 #Quick check 
 
 ```{r}
-p<-ode(initial_contamination, time_space, ode_model, c(r=100,C=10555,d=5055,g=55,l=90), method = "radau",atol = 1e-4, rtol = 1e-4)
+p<-ode(initial_contamination, times, ode_model, c(r=100,C=10555,d=5055,g=55,l=90), method = "radau",atol = 1e-4, rtol = 1e-4)
 
 one_run=deterministic_run(precision,initial_contamination,c(r=100,C=10555,d=5055,g=55,l=90)) %>% as_tibble()
 one_run<-cbind(c(2,4,6,16,18,20,22,24),t(one_run)) %>% as_tibble()
