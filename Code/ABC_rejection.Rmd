@@ -6,7 +6,18 @@ output: github_document
 ```{r setup, include=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr,ggpurb)
-dyn.load("testODE.so")
+system("R CMD SHLIB testODE_X86.c")
+dyn.load("testODE_X86.so")
+
+dynLoad <- function(dynlib){
+    dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
+    dyn.load(dynlib)
+}
+
+# dynUnload <- function(dynlib){
+#     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
+#     dyn.unload(dynlib)
+# }
 ```
 
 # ABC vanilla
@@ -14,7 +25,7 @@ dyn.load("testODE.so")
 ## Import the data
 
 
-```{r data import}
+```{r data import, echo=FALSE,warning=FALSE}
 df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names()  %>% 
   mutate(treatment=as.factor(treatment),
          group=as.factor(group))
@@ -24,13 +35,14 @@ df %>% glimpse()
 
 ## Distance function
 
-You can include R code in the document as follows:
+Here we calculate the squared Euclidean distance (ignoring the square root as this is very slow). Other distances could be using summary statistics including quantiles
 
 ```{r distance}
 Distance<-function(x,y,s){  # computes the Euclidean distance between two lists of the same length
   if (length(x) == length(y)){
-    sqrt(sum(((x)-(y))/(s))^2)
-              }
+    # sqrt(sum(((x)-(y))/(s))^2) #sqrt is very slow
+    sum(((x)-(y))/(s))^2
+  }
   else{
     print( 'lists not the same length')}
 }
@@ -92,23 +104,21 @@ deterministic_run_C<-function(precision,initial_contamination,parameters){
   tmax = 6
   times = seq(0, tmax, length.out = precision) #precision+1
 
-#sim=odeint(ode_model,initial_contamination,times,args=(r,C,d,g,l))
-#parameters=c(r,C,d,g,l)
-  # parms <- c(C = 33, d = 100, g=2,r=37);
-Y <-c(Contamination=initial_contamination) ;
-# sim<- ode(initial_contamination, times, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
-# sim <- ode(Y, times, func = "derivs", parms = parameters, dllname = "decay_ODE", method = "radau",
-#            initfunc = "initmod", atol = 1e-4, rtol = 1e-4)
-sim <- ode(initial_contamination, times, func = "derivs", dllname = "testODE", initfunc = "initmod",
+Y <-c(Contamination=initial_contamination) 
+sim <- ode(initial_contamination, times, func = "derivs", dllname = "testODE_X86", initfunc = "initmod",
             parms = parameters, method = "radau", atol = 1e-4, rtol = 1e-4)
 
 # num_at_0=sim[int(precision*0.1/50.0)]
-# num_at_1=sim[(precision*0.1/tmax),2]
+num_at_1=sim[(precision*1/tmax),2]
 num_at_2=sim[(precision*2/tmax),2]
 num_at_4=sim[(precision*4/tmax),2]
 num_at_6=sim[(precision*6/tmax),2]
-
-return(cbind(num_at_2,num_at_4,num_at_6))
+# num_at_16=sim[(precision*16/tmax),2]
+# num_at_18=sim[(precision*18/tmax),2]
+# num_at_20=sim[(precision*20/tmax),2]
+# num_at_22=sim[(precision*22/tmax),2]
+# num_at_24=sim[(precision*24/tmax),2]
+return(cbind(num_at_1,num_at_2,num_at_4,num_at_6))
 # return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
 }
 ```
@@ -117,9 +127,8 @@ Initial data to input into the algorithm
 ```{r}
 df %>% 
   group_by(treatment,group,time) %>% 
-  summarise(M=mean(conc),S=sd(conc))
-  filter(treatment=="Treated") %>% 
-  select(time) 
+  summarise(M=mean(conc),S=sd(conc)) %>% 
+  filter(treatment=="Treated" & time<10) ->data
 ```
 
 
@@ -129,9 +138,9 @@ df %>%
 ```{r}
 ##################################################################################################################
 ## Applying the ABC rejection algorithm
-initial_contamination=c(Contamination=1200) #median 34
-experimental_data = c(134,202,294)#c(11.5,5,2,0,6)#
-s=c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
+initial_contamination=c(Contamination=20550)#data$M[1]) #median 34
+experimental_data = data$M[1:NROW(data)] #c(1200,134,202,294)#c(11.5,5,2,0,6)#
+s=data$S[1:NROW(data)]#c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
 sample_size = 1000
 #parameter_sample <- c()
 parameter_sample<- matrix(data=NA,nrow=1,ncol=4)
@@ -154,7 +163,7 @@ while (NROW(parameter_sample) <= sample_size){
   # The prior distributions we use are d ~ U(0.001,10.0), C ~ U(200,1200), r ~ U(0.001,1.0), g ~ U(0.001,1.0). 
   # We begin by sampling from these distributions and simulating the process
 trial_r = runif(1,1E-1,1e2)
-trial_C = runif(1,1e3,6e3)
+trial_C = runif(1,1e3,6e4)
 trial_d = runif(1,1,1e3)
 trial_g = runif(1,1,2e2)
 # trial_l = runif(1,1E-5,1e2)
@@ -166,19 +175,22 @@ total_trials=total_trials+1.0
 parameters <- c(C = trial_C, d = trial_d, g=trial_g,r=trial_r); #For C code
 one_run = deterministic_run_C(precision,initial_contamination,parameters)# For C code
 
-#experimental_data_noP2 = [652.0, 556.0, 424.5, 467.5, 428.0, 550.0, 672.0]
-
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta = 50 #dictates distance
-euclidean_distance = abs(dist(rbind(one_run,experimental_data)))#Distance(one_run, experimental_data,s) #Distance(one_run, experimental_data,s)#_noP2)
+delta=900
+if(NROW(parameter_sample)==50){
+  delta = quantile(distances,0.01)[1] %>% as.numeric()
+}
+#475331#dictates distance
+euclidean_distance = abs(dist(rbind(one_run,experimental_data))) #Distance(one_run, experimental_data,s) #
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
 
 if (euclidean_distance < delta){
   #parameter_sample = parameter_sample[!is.na(parameter_sample)];
-  parameter_sample=rbind(parameter_sample, c(trial_r,trial_C,trial_d,trial_g))
+  # print(euclidean_distance)
+  parameter_sample=rbind(parameter_sample, c(trial_C,trial_d,trial_g,trial_r))
   distances=rbind(distances,euclidean_distance)
   accepted_trials=accepted_trials+1.0
   print(paste0("Trial number accepted: ",accepted_trials))
@@ -194,7 +206,8 @@ print(paste0("Percentage of trials accepted: ",(100*accepted_trials/total_trials
 #Order the distances and then the parameter sample
 parameter_sample<-parameter_sample[order(distances), ]
 parameter_sample<-parameter_sample%>%as.data.frame()#%>%set_colnames(c("r", "C", "d","g","l"))
-colnames(parameter_sample)<-c("r", "C", "d","g")
+colnames(parameter_sample)<-c( "C", "d","g","r")
+summary(distances)
 #stopImplicitCluster()
 
 
@@ -344,8 +357,7 @@ temp.list %>%
 # Plot histograms
 ```{r histograms}
 parameter_sample %>% 
-  pivot_longer(c(r,C,d,g)) %>% 
-  # filter(name!="l") %>% 
+  pivot_longer(c(C,d,g,r)) %>% 
   ggplot()+
   geom_histogram(aes(x=value,fill=name))+
   facet_wrap(~name,scales="free")+
@@ -376,36 +388,20 @@ sim$CurveNum<-rep(1:4,each=nrow(sim1))
 #lines(sim,col="blue")
 sim<-sim%>%as.data.frame()#%>%tidyr::set_colnames(c("Time","Contamination","CurveNum"))
 colnames(sim)<-c("Time","Contamination","CurveNum")
-# df<- read_csv("~/Downloads/SurfaceCleaning/Data/cleaningExptBeth.csv")#data.frame(Time=c(0,1,2,4,8,24),Contamination=c(initial_contamination,experimental_data))
-# df<-df[,-2]%>%set_colnames(c("Contamination","CleaningType","Time","Replica"))
-# df$CleaningType<-factor(df$CleaningType, levels = c("Control","Alcohol","Detergent", "Distilled Water"))
 
 
 ggplot()+
   geom_line(data=sim %>% as_tibble(),aes(x=Time,y=Contamination,colour=as.factor(CurveNum)))+
-  geom_point(data=df %>% filter(treatment=="Treated" & time <10),aes(x=time,y=conc))+
+  geom_point(data=df %>% filter(treatment=="Treated" ),aes(x=time,y=conc))+
   # stat_summary(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),fun.data = "mean_cl_boot", colour = "red", size = 2)+
   # scale_y_continuous(trans="log")+
   scale_y_continuous(trans="log")+
   hrbrthemes::theme_ipsum()+
    theme(legend.position = "none")
 
-# distances %>% as_tibble %>% 
-#   separate(V1,into = c(NA,"V1"),sep=" ")
-```
-#Quick check 
 
-```{r}
-p<-ode(initial_contamination, times, ode_model, c(r=100,C=10555,d=5055,g=55,l=90), method = "radau",atol = 1e-4, rtol = 1e-4)
-
-one_run=deterministic_run(precision,initial_contamination,c(r=100,C=10555,d=5055,g=55,l=90)) %>% as_tibble()
-one_run<-cbind(c(2,4,6,16,18,20,22,24),t(one_run)) %>% as_tibble()
-ggplot()+
-  geom_line(data=p %>% as_tibble(),aes(x=time,y=Contamination))+
-   geom_point(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),alpha=0.5)+
-    geom_point(data=one_run,aes(x=V1,y=V2),colour="red",shape=24,size=4)
-  # geom_point(data=tibble(x=c(2,4,6,16,18,20,22,24),y=experimental_data),aes(x=x,y=y))
 ```
+
 
 # GGally - GGpairs
 
@@ -413,10 +409,9 @@ ggplot()+
 ```{r}
 
 parameter_sample %>% 
-  # pivot_longer(c(r,C,d,g)) %>% 
-  # filter(name!="l") %>% 
+   filter(row_number() %% 10 == 1) %>% 
   GGally::ggpairs()+
   hrbrthemes::theme_ipsum()
 ```
 
-# TODO Modelar segundo cacho y ver si r explica
+# TODO Modelar segundo cacho y ver si r explica el incrementa
