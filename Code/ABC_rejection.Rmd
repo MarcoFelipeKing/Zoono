@@ -6,14 +6,23 @@ output: github_document
 ```{r setup, include=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr,ggpurb)
-system("R CMD SHLIB testODE_X86.c")
-dyn.load("testODE_X86.so")
+
+# Check the system architecture before loading the compiled function
+
+if(Sys.info()["machine"]=="arm64"){
+  system("R CMD SHLIB testODE_arm64.c")
+  dyn.load("testODE_arm64.so")  
+}else{
+  system("R CMD SHLIB testODE_X86.c")
+  dyn.load("testODE_X86.so")  
+}
+
 
 dynLoad <- function(dynlib){
     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
     dyn.load(dynlib)
 }
-
+dynLoad(testODE_arm64)
 # dynUnload <- function(dynlib){
 #     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
 #     dyn.unload(dynlib)
@@ -40,11 +49,11 @@ Here we calculate the squared Euclidean distance (ignoring the square root as th
 ```{r distance}
 Distance<-function(x,y,s){  # computes the Euclidean distance between two lists of the same length
   if (length(x) == length(y)){
-    # sqrt(sum(((x)-(y))/(s))^2) #sqrt is very slow
-    sum(((x)-(y))/(s))^2
+     #sqrt(sum((x-y)/(s))^2) #sqrt is slow
+    (sum((x-y)/(s)))^2 #This is faster than abs(dist(rbind(x/s,y/s))) by 1 order of magnitude
   }
   else{
-    print( 'lists not the same length')}
+    print( 'vectors are not the same length')}
 }
 ```
 
@@ -105,7 +114,7 @@ deterministic_run_C<-function(precision,initial_contamination,parameters){
   times = seq(0, tmax, length.out = precision) #precision+1
 
 Y <-c(Contamination=initial_contamination) 
-sim <- ode(initial_contamination, times, func = "derivs", dllname = "testODE_X86", initfunc = "initmod",
+sim <- ode(initial_contamination, times, func = "derivs", dllname = "testODE_arm64", initfunc = "initmod",
             parms = parameters, method = "radau", atol = 1e-4, rtol = 1e-4)
 
 # num_at_0=sim[int(precision*0.1/50.0)]
@@ -178,12 +187,14 @@ one_run = deterministic_run_C(precision,initial_contamination,parameters)# For C
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta=900
+delta=1#0.006136007
+
 if(NROW(parameter_sample)==50){
   delta = quantile(distances,0.01)[1] %>% as.numeric()
-}
-#475331#dictates distance
-euclidean_distance = abs(dist(rbind(one_run,experimental_data))) #Distance(one_run, experimental_data,s) #
+  print(paste("Reducing delta to ", delta))
+} else {delta=delta}
+
+euclidean_distance = Distance(one_run, experimental_data,s) # abs(dist(rbind(one_run,experimental_data))) #
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
 
