@@ -403,7 +403,7 @@ colnames(sim)<-c("Time","Contamination","CurveNum")
 
 ggplot()+
   geom_line(data=sim %>% as_tibble(),aes(x=Time,y=Contamination,colour=as.factor(CurveNum)))+
-  geom_point(data=df %>% filter(treatment=="Treated" ),aes(x=time,y=conc))+
+  geom_point(data=df %>% filter(treatment=="Treated" & time <10),aes(x=time,y=conc))+
   # stat_summary(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),fun.data = "mean_cl_boot", colour = "red", size = 2)+
   # scale_y_continuous(trans="log")+
   scale_y_continuous(trans="log")+
