@@ -12,3 +12,9 @@ The following graph shows the concentration of aerobic colony counts on particip
 
 
 
+## Approximate Bayesian Computation - Parameter inference
+We consider only recontamination from surface contacts, not from additional proliferation of the bacterias on the hands.
+$$ y'=(1-\dfrac{y}{C})r-d\exp(-g t)y$$
+
+$C$ is carrying capacity. $d$ is . $g$ is decay from the disinfectant.
+~                                                                       
