@@ -167,4 +167,21 @@ plot(diff(R$C))
               
               
               
-              
+#######
+#read in the data
+df<-read.csv("Data/gerba_data_summary.csv",header=T)
+df%>%
+filter(time>6)%>%
+ggplot(aes(x=time,y=mean,colour=treatment))+
+geom_point()+
+  geom_smooth(method="lm")+
+  scale_x_continuous(name="Time (h) after sanitising", scales::pretty_breaks(n = 12))+
+  scale_y_continuous("Total aerobic colony count",trans="log")
+
+fit_lm<-lm(log(mean)~seq(0,8,2),data=df%>%filter(treatment=="Untreated" & time >6))
+fit_lm
+
+fit_lm<-lm(log(mean)~seq(0,8,2),data=df%>%filter(treatment=="Treated" & time >6))
+fit_lm
+
+#fit an exponential to the data
