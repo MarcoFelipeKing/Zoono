@@ -12,7 +12,7 @@ pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes)
 
 
 ```{r data import}
-df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names() %>% select(-1) %>% 
+df<-vroom::vroom("Data/gerba.data.20200302.csv") %>% janitor::clean_names() %>% select(-1) %>% 
   mutate(treatment=as.factor(treatment),
          group=as.factor(group))
 # df %>% 
@@ -165,7 +165,7 @@ df %>%
 ```
 
 
-#Run a regression model to estimate the effect of time
+# Run a regression model to estimate the effect of time
 Use the bayesian regression package BRMS and plots using bayesplot "group+time+intervention + (time+intervention | participant)"
 
 ## Summary statistics 
@@ -229,7 +229,7 @@ bayesplot::ppc_dens_overlay(y = (fit_m2$data$conc),
 ```
 ### Model selection  
 
-Efficient approximate leave-one-out cross-validation (LOO)
+Efficient approximate leave-one-out cross-validation (LOO) 
 
 ```{r}
 #Model with Gamma respones
