@@ -22,7 +22,7 @@ dynLoad <- function(dynlib){
     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
     dyn.load(dynlib)
 }
-dynLoad(testODE_arm64)
+dynLoad("testODE_arm64")
 # dynUnload <- function(dynlib){
 #     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
 #     dyn.unload(dynlib)
@@ -92,7 +92,7 @@ deterministic_run<-function(precision,initial_contamination,parameters){
 #parameters=c(r,C,d,g,l)
 sim<- ode(initial_contamination, times, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
 # num_at_0=sim[int(precision*0.1/50.0)]
-num_at_1=sim[(precision*0.1/tmax),2]
+num_at_1=sim[(precision*1/tmax),2]
 num_at_2=sim[(precision*2/tmax),2]
 num_at_4=sim[(precision*4/tmax),2]
 num_at_6=sim[(precision*6/tmax),2]
@@ -147,7 +147,7 @@ df %>%
 ```{r}
 ##################################################################################################################
 ## Applying the ABC rejection algorithm
-initial_contamination=c(Contamination=20550)#data$M[1]) #median 34
+initial_contamination=c(Contamination=20560)#data$M[1]) #median 34
 experimental_data = data$M[1:NROW(data)] #c(1200,134,202,294)#c(11.5,5,2,0,6)#
 s=data$S[1:NROW(data)]#c(93.70165,86.13942,162.11107,116.61904,123.61230,396.88789,628.87201,1147.13556)
 sample_size = 1000
@@ -187,12 +187,12 @@ one_run = deterministic_run_C(precision,initial_contamination,parameters)# For C
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
-delta=1#0.006136007
+delta=0.01#0.006136007
 
-if(NROW(parameter_sample)==50){
-  delta = quantile(distances,0.01)[1] %>% as.numeric()
-  print(paste("Reducing delta to ", delta))
-} else {delta=delta}
+# if(NROW(parameter_sample)==50){
+#   delta = quantile(distances,0.01)[1] %>% as.numeric()
+#   print(paste("Reducing delta to ", delta))
+# } else {delta=delta}
 
 euclidean_distance = Distance(one_run, experimental_data,s) # abs(dist(rbind(one_run,experimental_data))) #
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
@@ -374,11 +374,14 @@ parameter_sample %>%
   facet_wrap(~name,scales="free")+
   hrbrthemes::theme_ipsum()
 
-parameter_sample %>% summary()
+
 
 write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 ```
 
+```{r}
+parameter_sample %>% summary()
+```
 
 # Plot example curves against experimetnal data
 ```{r curves}
@@ -390,25 +393,56 @@ write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 tmax = 6
 times = seq(0, tmax, length.out = 5000+1)
 
-sim1<-ode(initial_contamination, times, ode_model, parameter_sample[1,], method = "radau",atol = 1e-4, rtol = 1e-4)
-sim2<-ode(initial_contamination, times, ode_model, parameter_sample[2,], method = "radau",atol = 1e-4, rtol = 1e-4)
-sim3<-ode(initial_contamination, times, ode_model, parameter_sample[3,], method = "radau",atol = 1e-4, rtol = 1e-4)
-sim4<-ode(initial_contamination, times, ode_model, parameter_sample[4,], method = "radau",atol = 1e-4, rtol = 1e-4)
-sim<-rbind(sim1[,c(1,2)],sim2[,c(1,2)],sim3[,c(1,2)],sim4[,c(1,2)])%>%as.data.frame()
-sim$CurveNum<-rep(1:4,each=nrow(sim1))
+# sim1<-ode(initial_contamination, times, ode_model, parameter_sample[1,], method = "radau",atol = 1e-4, rtol = 1e-4)
+# sim2<-ode(initial_contamination, times, ode_model, parameter_sample[2,], method = "radau",atol = 1e-4, rtol = 1e-4)
+# sim3<-ode(initial_contamination, times, ode_model, parameter_sample[3,], method = "radau",atol = 1e-4, rtol = 1e-4)
+# sim4<-ode(initial_contamination, times, ode_model, parameter_sample[4,], method = "radau",atol = 1e-4, rtol = 1e-4)
+# sim<-rbind(sim1[,c(1,2)],sim2[,c(1,2)],sim3[,c(1,2)],sim4[,c(1,2)])%>%as.data.frame()
+# sim$CurveNum<-rep(1:4,each=nrow(sim1))
+# #lines(sim,col="blue")
+# sim<-sim%>%as.data.frame()#%>%tidyr::set_colnames(c("Time","Contamination","CurveNum"))
+# colnames(sim)<-c("Time","Contamination","CurveNum")
+# 
+# 
+# ggplot()+
+#   geom_line(data=sim %>% as_tibble(),aes(x=Time,y=Contamination,colour=as.factor(CurveNum)))+
+#   geom_point(data=df %>% filter(treatment=="Treated" & time <10),aes(x=time,y=conc))+
+#   # stat_summary(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),fun.data = "mean_cl_boot", colour = "red", size = 2)+
+#   # scale_y_continuous(trans="log")+
+#   scale_y_continuous(trans="log")+
+#   hrbrthemes::theme_ipsum()+
+#    theme(legend.position = "none")
+
+parameter_sample %>% 
+  drop_na() %>% 
+  summarise(across(.cols=everything(),quantile)) ->p_summary
+
+sim1<-ode(initial_contamination, times, ode_model, p_summary[2,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim2<-ode(initial_contamination, times, ode_model, p_summary[3,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim3<-ode(initial_contamination, times, ode_model, p_summary[4,], method = "radau",atol = 1e-4, rtol = 1e-4)
+# sim4<-ode(initial_contamination, times, ode_model, p_summary[1,], method = "radau",atol = 1e-4, rtol = 1e-4)
+sim<-rbind(sim1[,c(1,2)],sim2[,c(1,2)],sim3[,c(1,2)])%>%as.data.frame()
+sim$CurveNum<-rep(1:3,each=nrow(sim1))
 #lines(sim,col="blue")
 sim<-sim%>%as.data.frame()#%>%tidyr::set_colnames(c("Time","Contamination","CurveNum"))
 colnames(sim)<-c("Time","Contamination","CurveNum")
 
+ribbon_data <- data.frame(ymin=sim %>% as_tibble()%>% filter(CurveNum==1) %>% select(Time,Contamination),
+                          ymax=sim %>% as_tibble()%>% filter(CurveNum==3) %>% select(Contamination)) %>% rename(Time=ymin.Time,ymin=ymin.Contamination,ymax=Contamination)
+  
+
 
 ggplot()+
-  geom_line(data=sim %>% as_tibble(),aes(x=Time,y=Contamination,colour=as.factor(CurveNum)))+
   geom_point(data=df %>% filter(treatment=="Treated" & time <10),aes(x=time,y=conc))+
-  # stat_summary(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),fun.data = "mean_cl_boot", colour = "red", size = 2)+
-  # scale_y_continuous(trans="log")+
-  scale_y_continuous(trans="log")+
+  geom_line(data=sim %>% as_tibble()%>% filter(CurveNum==2) ,aes(x=Time,y=Contamination))+
+  geom_ribbon(data=ribbon_data ,aes(x=Time,ymin=ymin, ymax=ymax), alpha=0.2)+
+# stat_summary(data=df %>% filter(treatment=="Treated"),aes(x=time,y=conc),fun.data = "mean_cl_boot", colour = "red", size = 2)+
+# scale_y_continuous(trans="log")+
+scale_y_continuous(trans="log")+
+  xlab("Time (h)")+
+  ylab("Concentration")+
   hrbrthemes::theme_ipsum()+
-   theme(legend.position = "none")
+  theme(legend.position = "none")
 
 
 ```
