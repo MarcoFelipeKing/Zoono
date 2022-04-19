@@ -10,8 +10,8 @@ pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr,ggpurb
 # Check the system architecture before loading the compiled function
 
 if(Sys.info()["machine"]=="arm64"){
-  system("R CMD SHLIB testODE_arm64.c")
-  dyn.load("testODE_arm64.so")  
+  system("R CMD SHLIB ODE_No_CarryingCap_arm64.c")
+  dyn.load("ODE_No_CarryingCap_arm64.so")  
 }else{
   system("R CMD SHLIB testODE_X86.c")
   dyn.load("testODE_X86.so")  
@@ -22,12 +22,49 @@ dynLoad <- function(dynlib){
     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
     dyn.load(dynlib)
 }
-dynLoad("testODE_arm64")
+dynLoad("ODE_No_CarryingCap_arm64")
 # dynUnload <- function(dynlib){
 #     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
 #     dyn.unload(dynlib)
 # }
 ```
+
+
+# Define the ODE to solve - We can consider one of the following
+
+1) We consider only recontamination from surface contacts, not from additional proliferation of the bacterias on the hands.
+$$ y'=(1-\dfrac{y}{C})r-d\exp(-g t)y$$
+
+$C$ is carrying capacity. $d$ is maximum effecicacy. $g$ is decay from the disinfectant. $r$ recontamination from contacts (this is linear). $l$ is the proliferation rate on the hands.
+
+2) If we wanted to consider proliferation on hands instead of surface accrual then we could use:
+$$ y'=y(1-\dfrac{y}{C})l-d\exp(-g t)y$$
+
+where $l$ is the rate at which microorganisms proliferate on hands. E.g. reproduction.
+
+3) Proliferation and increase from contacts can be combined:
+$$ y'=(yl+r)(1-\dfrac{y}{C})-d\exp(-g t)y$$
+
+But since we don't see any saturation then we could ignore carrying capacity. 
+$$ y'=(yl+r)(1-y)-d\exp(-g t)y$$
+
+However with the data we have it is unlikely that we can learn about $l$ and $r$ together.
+
+Currently we only consider the first 4 experimental datapoints as there is a gap which is hard to explain using this model-
+
+Notes: 12th April
+- We can first try to fit the model to the data from group 2's washed hand to learn only about $C$ and $r$.
+- Then with those learned $C$ and $r$ we can fit the model to the data from group 1's washed hand to learn only about $d$ and $g$. 
+- But we never reach a saturation so maybe we shouldn't consider $C$ at all.
+
+
+Notes: 13th April
+- Try to take into account untreated data from group 1 to estimate the effect of proliferation and accrual
+- Apply $ y'=(yl+r)(1-y)$ to untreated hand from group 1 to learn about $l$ (proliferation rate) and $r$ (surface contact rate).
+- Ideally we use all data from both groups to learn about all the parametrs because we can assume that the untreated hand from both groups behaves similarly. Fitting an exponential model to these data, suggests $l$ (proliferation) is the same for both groups (0.18)
+$$ y'=yl-d\exp(-g t)y$$
+
+
 
 # ABC vanilla
 
@@ -57,7 +94,7 @@ Distance<-function(x,y,s){  # computes the Euclidean distance between two lists 
 }
 ```
 
-## ODE solver function
+## ODE solver function - Non-C
 
 ```{r ODE function}
 # ode_model <- function(times, initial_contamination, parameters){
@@ -73,14 +110,14 @@ Distance<-function(x,y,s){  # computes the Euclidean distance between two lists 
 ode_model<- function(t, y, parameters){
   with(
     as.list(c(y, parameters)),{
-      dContamination <- (1-Contamination/C)*r -d * exp(-g * t) * Contamination
+      dContamination <- Contaminationr -d * exp(-g * t) * Contamination
       return(list(dContamination))
     }
   )
 }
 ```
 
-## Deterministic run function
+## Deterministic run function - Non-C
 
 ```{r deterministic run function}
 
@@ -345,32 +382,12 @@ write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 
 ```
 
-# Extract distances and parameter samples - Parallel
-```{r extract parameter samples}
-# lapply(temp.list, function(x) x[(names(x) %in% c("r", "C","d","g"))])->tst
-# pp %>% purrr::pluck(1)
-
-temp.list %>%
-  bind_rows() %>% 
-  # select(parameter_sample) %>% 
-  drop_na() %>% 
-  pivot_longer(c(r,C,d,g)) %>% 
-  ggplot()+
-  geom_histogram(aes(x=value,fill=name))+
-  facet_wrap(~name,scales="free")+
-  hrbrthemes::theme_ipsum()
-
-
-
-
-
-```
-
 
 # Plot histograms
 ```{r histograms}
 parameter_sample %>% 
   pivot_longer(c(C,d,g,r)) %>% 
+  filter(name!="C") %>% 
   ggplot()+
   geom_density(aes(x=value,fill=name))+
   scale_fill_brewer(palette = "Set1")+
@@ -458,6 +475,7 @@ scale_y_continuous(trans="log")+
 ```{r}
 
 parameter_sample %>% 
+  select(!C) %>% 
    filter(row_number() %% 10 == 1) %>% 
   GGally::ggpairs()+
   hrbrthemes::theme_ipsum()
@@ -465,40 +483,4 @@ parameter_sample %>%
 
 # TODO Modelar segundo cacho y ver si r explica el incremento
 # TODO probar otra ecuacion
-
-# Define the ODE to solve 
-
-1) We consider only recontamination from surface contacts, not from additional proliferation of the bacterias on the hands.
-$$ y'=(1-\dfrac{y}{C})r-d\exp(-g t)y$$
-
-$C$ is carrying capacity. $d$ is maximum effecicacy. $g$ is decay from the disinfectant. $r$ recontamination from contacts (this is linear). $l$ is the proliferation rate on the hands.
-
-2) If we wanted to consider proliferation on hands instead of surface accrual then we could use:
-$$ y'=y(1-\dfrac{y}{C})l-d\exp(-g t)y$$
-
-where $l$ is the rate at which microorganisms proliferate on hands. E.g. reproduction.
-
-3) Proliferation and increase from contacts can be combined:
-$$ y'=(yl+r)(1-\dfrac{y}{C})-d\exp(-g t)y$$
-
-But since we don't see any saturation then we could ignore carrying capacity. 
-$$ y'=(yl+r)(1-y)-d\exp(-g t)y$$
-
-However with the data we have it is unlikely that we can learn about $l$ and $r$ together.
-
-Currently we only consider the first 4 experimental datapoints as there is a gap which is hard to explain using this model-
-
-Notes: 12th April
-- We can first try to fit the model to the data from group 2's washed hand to learn only about $C$ and $r$.
-- Then with those learned $C$ and $r$ we can fit the model to the data from group 1's washed hand to learn only about $d$ and $g$. 
-- But we never reach a saturation so maybe we shouldn't consider $C$ at all.
-
-
-Notes: 13th April
-- Try to take into account untreated data from group 1 to estimate the effect of proliferation and accrual
-- Apply $ y'=(yl+r)(1-y)$ to untreated hand from group 1 to learn about $l$ (proliferation rate) and $r$ (surface contact rate).
-- Ideally we use all data from both groups to learn about all the parametrs because we can assume that the untreated hand from both groups behaves similarly. Fitting an exponential model to these data, suggests $l$ (proliferation) is the same for both groups (0.18)
-$$ y'=yl-d\exp(-g t)y$$
-
-
 
