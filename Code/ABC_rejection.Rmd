@@ -1,11 +1,11 @@
 ---
-title: "ABC"
+title: "ABC rejection algorithm"
 output: github_document
 ---
 
 ```{r setup, include=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr,ggpurb)
+pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr,ggpubr)
 
 # Check the system architecture before loading the compiled function
 
@@ -50,7 +50,7 @@ Here we calculate the squared Euclidean distance (ignoring the square root as th
 Distance<-function(x,y,s){  # computes the Euclidean distance between two lists of the same length
   if (length(x) == length(y)){
      #sqrt(sum((x-y)/(s))^2) #sqrt is slow
-    (sum((x-y)/(s)))^2 #This is faster than abs(dist(rbind(x/s,y/s))) by 1 order of magnitude
+    (sum((x-y)/s))^2 #This is faster than abs(dist(rbind(x/s,y/s))) by 1 order of magnitude
   }
   else{
     print( 'vectors are not the same length')}
@@ -85,7 +85,7 @@ ode_model<- function(t, y, parameters){
 ```{r deterministic run function}
 
 deterministic_run<-function(precision,initial_contamination,parameters){
-  tmax = 6
+  tmax = 24
   times = seq(0, tmax, length.out = precision) #precision+1
 
 #sim=odeint(ode_model,initial_contamination,times,args=(r,C,d,g,l))
@@ -142,7 +142,7 @@ df %>%
 
 
 
-# Run the ABC Rejection Code - Serial
+# Run the ABC Rejection Code - C version
 
 ```{r}
 ##################################################################################################################
@@ -374,9 +374,9 @@ parameter_sample %>%
   ggplot()+
   geom_density(aes(x=value,fill=name))+
   scale_fill_brewer(palette = "Set1")+
-  facet_wrap(~name,scales="free")+
+  facet_wrap(~name,scales="free",ncol = 4)+
   hrbrthemes::theme_ipsum()+
-  theme(legend.position = "none")
+  theme(legend.position = "none")->b
 
 
 
@@ -446,7 +446,9 @@ scale_y_continuous(trans="log")+
   xlab("Time (h)")+
   ylab("Concentration")+
   hrbrthemes::theme_ipsum()+
-  theme(legend.position = "none")
+  theme(legend.position = "none")->a
+
+ggpubr::ggarrange(a,b,nrow=2)
 
 
 ```

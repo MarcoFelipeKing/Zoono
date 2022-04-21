@@ -1,17 +1,17 @@
 ---
-title: "ABC"
+title: "ABC rejection algorithm"
 output: github_document
 ---
 
 ```{r setup, include=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr,ggpurb)
+pacman::p_load(dplyr,ggplot2,tidyr,janitor,vroom,hrbrthemes,deSolve,furrr,ggpubr)
 
 # Check the system architecture before loading the compiled function
 
 if(Sys.info()["machine"]=="arm64"){
   system("R CMD SHLIB ODE_No_CarryingCap_arm64.c")
-  dyn.load("ODE_No_CarryingCap_arm64.so")  
+  dyn.load("testODE_arm64.so")  
 }else{
   system("R CMD SHLIB testODE_X86.c")
   dyn.load("testODE_X86.so")  
@@ -28,43 +28,6 @@ dynLoad("ODE_No_CarryingCap_arm64")
 #     dyn.unload(dynlib)
 # }
 ```
-
-
-# Define the ODE to solve - We can consider one of the following
-
-1) We consider only recontamination from surface contacts, not from additional proliferation of the bacterias on the hands.
-$$ y'=(1-\dfrac{y}{C})r-d\exp(-g t)y$$
-
-$C$ is carrying capacity. $d$ is maximum effecicacy. $g$ is decay from the disinfectant. $r$ recontamination from contacts (this is linear). $l$ is the proliferation rate on the hands.
-
-2) If we wanted to consider proliferation on hands instead of surface accrual then we could use:
-$$ y'=y(1-\dfrac{y}{C})l-d\exp(-g t)y$$
-
-where $l$ is the rate at which microorganisms proliferate on hands. E.g. reproduction.
-
-3) Proliferation and increase from contacts can be combined:
-$$ y'=(yl+r)(1-\dfrac{y}{C})-d\exp(-g t)y$$
-
-But since we don't see any saturation then we could ignore carrying capacity. 
-$$ y'=(yl+r)(1-y)-d\exp(-g t)y$$
-
-However with the data we have it is unlikely that we can learn about $l$ and $r$ together.
-
-Currently we only consider the first 4 experimental datapoints as there is a gap which is hard to explain using this model-
-
-Notes: 12th April
-- We can first try to fit the model to the data from group 2's washed hand to learn only about $C$ and $r$.
-- Then with those learned $C$ and $r$ we can fit the model to the data from group 1's washed hand to learn only about $d$ and $g$. 
-- But we never reach a saturation so maybe we shouldn't consider $C$ at all.
-
-
-Notes: 13th April
-- Try to take into account untreated data from group 1 to estimate the effect of proliferation and accrual
-- Apply $ y'=(yl+r)(1-y)$ to untreated hand from group 1 to learn about $l$ (proliferation rate) and $r$ (surface contact rate).
-- Ideally we use all data from both groups to learn about all the parametrs because we can assume that the untreated hand from both groups behaves similarly. Fitting an exponential model to these data, suggests $l$ (proliferation) is the same for both groups (0.18)
-$$ y'=yl-d\exp(-g t)y$$
-
-
 
 # ABC vanilla
 
@@ -87,14 +50,14 @@ Here we calculate the squared Euclidean distance (ignoring the square root as th
 Distance<-function(x,y,s){  # computes the Euclidean distance between two lists of the same length
   if (length(x) == length(y)){
      #sqrt(sum((x-y)/(s))^2) #sqrt is slow
-    (sum((x-y)/(s)))^2 #This is faster than abs(dist(rbind(x/s,y/s))) by 1 order of magnitude
+    (sum((x-y)/s))^2 #This is faster than abs(dist(rbind(x/s,y/s))) by 1 order of magnitude
   }
   else{
     print( 'vectors are not the same length')}
 }
 ```
 
-## ODE solver function - Non-C
+## ODE solver function
 
 ```{r ODE function}
 # ode_model <- function(times, initial_contamination, parameters){
@@ -110,19 +73,19 @@ Distance<-function(x,y,s){  # computes the Euclidean distance between two lists 
 ode_model<- function(t, y, parameters){
   with(
     as.list(c(y, parameters)),{
-      dContamination <- Contaminationr -d * exp(-g * t) * Contamination
+      dContamination <- Contamination*r -d * exp(-g * t) * Contamination
       return(list(dContamination))
     }
   )
 }
 ```
 
-## Deterministic run function - Non-C
+## Deterministic run function
 
 ```{r deterministic run function}
 
 deterministic_run<-function(precision,initial_contamination,parameters){
-  tmax = 6
+  tmax = 24
   times = seq(0, tmax, length.out = precision) #precision+1
 
 #sim=odeint(ode_model,initial_contamination,times,args=(r,C,d,g,l))
@@ -133,14 +96,14 @@ num_at_1=sim[(precision*1/tmax),2]
 num_at_2=sim[(precision*2/tmax),2]
 num_at_4=sim[(precision*4/tmax),2]
 num_at_6=sim[(precision*6/tmax),2]
-# num_at_16=sim[(precision*16/tmax),2]
-# num_at_18=sim[(precision*18/tmax),2]
-# num_at_20=sim[(precision*20/tmax),2]
-# num_at_22=sim[(precision*22/tmax),2]
-# num_at_24=sim[(precision*24/tmax),2]
+num_at_16=sim[(precision*16/tmax),2]
+num_at_18=sim[(precision*18/tmax),2]
+num_at_20=sim[(precision*20/tmax),2]
+num_at_22=sim[(precision*22/tmax),2]
+num_at_24=sim[(precision*24/tmax),2]
 
-return(cbind(num_at_1,num_at_2,num_at_4,num_at_6))
-# return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
+# return(cbind(num_at_1,num_at_2,num_at_4,num_at_6))
+return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
 }
 ```
 
@@ -151,7 +114,7 @@ deterministic_run_C<-function(precision,initial_contamination,parameters){
   times = seq(0, tmax, length.out = precision) #precision+1
 
 Y <-c(Contamination=initial_contamination) 
-sim <- ode(initial_contamination, times, func = "derivs", dllname = "testODE_arm64", initfunc = "initmod",
+sim <- ode(initial_contamination, times, func = "derivs", dllname = "ODE_No_CarryingCap_arm64", initfunc = "initmod",
             parms = parameters, method = "radau", atol = 1e-4, rtol = 1e-4)
 
 # num_at_0=sim[int(precision*0.1/50.0)]
@@ -179,7 +142,7 @@ df %>%
 
 
 
-# Run the ABC Rejection Code - Serial
+# Run the ABC Rejection Code - C version
 
 ```{r}
 ##################################################################################################################
@@ -382,6 +345,27 @@ write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 
 ```
 
+# Extract distances and parameter samples - Parallel
+```{r extract parameter samples}
+# lapply(temp.list, function(x) x[(names(x) %in% c("r", "C","d","g"))])->tst
+# pp %>% purrr::pluck(1)
+
+temp.list %>%
+  bind_rows() %>% 
+  # select(parameter_sample) %>% 
+  drop_na() %>% 
+  pivot_longer(c(r,C,d,g)) %>% 
+  ggplot()+
+  geom_histogram(aes(x=value,fill=name))+
+  facet_wrap(~name,scales="free")+
+  hrbrthemes::theme_ipsum()
+
+
+
+
+
+```
+
 
 # Plot histograms
 ```{r histograms}
@@ -391,9 +375,9 @@ parameter_sample %>%
   ggplot()+
   geom_density(aes(x=value,fill=name))+
   scale_fill_brewer(palette = "Set1")+
-  facet_wrap(~name,scales="free")+
+  facet_wrap(~name,scales="free",ncol = 3)+
   hrbrthemes::theme_ipsum()+
-  theme(legend.position = "none")
+  theme(legend.position = "none")->b
 
 
 
@@ -436,7 +420,7 @@ times = seq(0, tmax, length.out = 5000+1)
 
 parameter_sample %>% 
   drop_na() %>% 
-  summarise(across(.cols=everything(),quantile)) ->p_summary
+  summarise(across(.cols=everything(),quantile))->p_summary
 
 sim1<-ode(initial_contamination, times, ode_model, p_summary[2,], method = "radau",atol = 1e-4, rtol = 1e-4)
 sim2<-ode(initial_contamination, times, ode_model, p_summary[3,], method = "radau",atol = 1e-4, rtol = 1e-4)
@@ -463,7 +447,9 @@ scale_y_continuous(trans="log")+
   xlab("Time (h)")+
   ylab("Concentration")+
   hrbrthemes::theme_ipsum()+
-  theme(legend.position = "none")
+  theme(legend.position = "none")->a
+
+ggpubr::ggarrange(a,b,nrow=2)
 
 
 ```
@@ -475,7 +461,6 @@ scale_y_continuous(trans="log")+
 ```{r}
 
 parameter_sample %>% 
-  select(!C) %>% 
    filter(row_number() %% 10 == 1) %>% 
   GGally::ggpairs()+
   hrbrthemes::theme_ipsum()
@@ -483,4 +468,40 @@ parameter_sample %>%
 
 # TODO Modelar segundo cacho y ver si r explica el incremento
 # TODO probar otra ecuacion
+
+# Define the ODE to solve 
+
+1) We consider only recontamination from surface contacts, not from additional proliferation of the bacterias on the hands.
+$$ y'=(1-\dfrac{y}{C})r-d\exp(-g t)y$$
+
+$C$ is carrying capacity. $d$ is maximum effecicacy. $g$ is decay from the disinfectant. $r$ recontamination from contacts (this is linear). $l$ is the proliferation rate on the hands.
+
+2) If we wanted to consider proliferation on hands instead of surface accrual then we could use:
+$$ y'=y(1-\dfrac{y}{C})l-d\exp(-g t)y$$
+
+where $l$ is the rate at which microorganisms proliferate on hands. E.g. reproduction.
+
+3) Proliferation and increase from contacts can be combined:
+$$ y'=(yl+r)(1-\dfrac{y}{C})-d\exp(-g t)y$$
+
+But since we don't see any saturation then we could ignore carrying capacity. 
+$$ y'=(yl+r)(1-y)-d\exp(-g t)y$$
+
+However with the data we have it is unlikely that we can learn about $l$ and $r$ together.
+
+Currently we only consider the first 4 experimental datapoints as there is a gap which is hard to explain using this model-
+
+Notes: 12th April
+- We can first try to fit the model to the data from group 2's washed hand to learn only about $C$ and $r$.
+- Then with those learned $C$ and $r$ we can fit the model to the data from group 1's washed hand to learn only about $d$ and $g$. 
+- But we never reach a saturation so maybe we shouldn't consider $C$ at all.
+
+
+Notes: 13th April
+- Try to take into account untreated data from group 1 to estimate the effect of proliferation and accrual
+- Apply $ y'=(yl+r)(1-y)$ to untreated hand from group 1 to learn about $l$ (proliferation rate) and $r$ (surface contact rate).
+- Ideally we use all data from both groups to learn about all the parametrs because we can assume that the untreated hand from both groups behaves similarly. Fitting an exponential model to these data, suggests $l$ (proliferation) is the same for both groups (0.18)
+$$ y'=yl-d\exp(-g t)y$$
+
+
 

@@ -1,14 +1,15 @@
 /* file testODE.c */
 #include <R.h>
-static double parms[3];
-#define d parms[0]
-#define g parms[1]
-#define r parms[2]
+static double parms[4];
+#define C parms[0]
+#define d parms[1]
+#define g parms[2]
+#define r parms[3]
 
 /* initializer  */
 void initmod(void (* odeparms)(int *, double *))
 {
-  int N=3;
+  int N=4;
   odeparms(&N, parms);
 }
 
