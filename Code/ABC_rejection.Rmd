@@ -501,6 +501,8 @@ Notes: 13th April
 - Apply $ y'=(yl+r)(1-y)$ to untreated hand from group 1 to learn about $l$ (proliferation rate) and $r$ (surface contact rate).
 - Ideally we use all data from both groups to learn about all the parametrs because we can assume that the untreated hand from both groups behaves similarly. Fitting an exponential model to these data, suggests $l$ (proliferation) is the same for both groups (0.18)
 $$ y'=yl-d\exp(-g t)y$$
+Notes 29th April
 
+Consider a two-part linear model to capture drop and then increase. Take into consideration the fallow time / sleep
 
 
