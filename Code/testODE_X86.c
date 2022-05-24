@@ -18,6 +18,6 @@ void derivs (int *neq, double *t, double *y, double *ydot,
              double *yout, int *ip)
 {
   // if (ip[0] <1) error("nout should be at least 1");
-  ydot[0] = (1-y[0]/C)*r-d * exp(-g * *t) * y[0];
+  ydot[0] = y[0]*(1-y[0]/C)*r-d * exp(-g * *t) * y[0];
 }
 /* END file testODEod.c */

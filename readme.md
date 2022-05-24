@@ -16,5 +16,15 @@ The following graph shows the concentration of aerobic colony counts on particip
 We consider only recontamination from surface contacts, not from additional proliferation of the bacterias on the hands.
 $$ y'=(1-\dfrac{y}{C})r-d\exp(-g t)y$$
 
-$C$ is carrying capacity. $d$ is . $g$ is decay from the disinfectant.
+$C$ is carrying capacity.$r$ is the scaling parameter for logistic growth representing the additional recontamination from surface contacts.
+
+ $d$ is . $g$ is decay from the disinfectant.
+
+# IMPORTANT - The above equation is wrong!
+a y is missing before the logisitc growth rate
+
+$$ y'=y*(1-\dfrac{y}{C})r-d\exp(-g t)y$$
+#Fixed on 20th May
+
+First part of the growth appears linear but after 16h it appears to be exponential
 ~                                                                       
