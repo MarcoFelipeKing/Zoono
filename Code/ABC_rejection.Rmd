@@ -22,7 +22,12 @@ dynLoad <- function(dynlib){
     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
     dyn.load(dynlib)
 }
+
+#ARM
 dynLoad("testODE_arm64")
+
+#OR 
+dynLoad("testODE_X86")
 # dynUnload <- function(dynlib){
 #     dynlib <- paste(dynlib, .Platform$dynlib.ext, sep = "")
 #     dyn.unload(dynlib)
@@ -43,7 +48,7 @@ df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names()  
 ```{r}
 df %>% 
   ggplot()+
-  geom_point(aes(x=time,y=conc,colour=treatment))+
+  geom_point(aes(x=time,y=conc,colour=treatment),size=4)+
   scale_y_continuous(trans = "log10")+
   xlab("Time [h]")+
   ylab("CFUs")+
@@ -100,19 +105,18 @@ deterministic_run<-function(precision,initial_contamination,parameters){
 #sim=odeint(ode_model,initial_contamination,times,args=(r,C,d,g,l))
 #parameters=c(r,C,d,g,l)
 sim<- ode(initial_contamination, times, ode_model, parameters, method = "radau",atol = 1e-4, rtol = 1e-4)
-# num_at_0=sim[int(precision*0.1/50.0)]
-num_at_1=sim[(precision*1/tmax),2]
+num_at_0=initial_contamination
+# num_at_1=sim[(precision*1/tmax),2]
 num_at_2=sim[(precision*2/tmax),2]
 num_at_4=sim[(precision*4/tmax),2]
 num_at_6=sim[(precision*6/tmax),2]
-# num_at_16=sim[(precision*16/tmax),2]
-# num_at_18=sim[(precision*18/tmax),2]
-# num_at_20=sim[(precision*20/tmax),2]
-# num_at_22=sim[(precision*22/tmax),2]
-# num_at_24=sim[(precision*24/tmax),2]
+num_at_16=sim[(precision*16/tmax),2]
+num_at_18=sim[(precision*18/tmax),2]
+num_at_20=sim[(precision*20/tmax),2]
+num_at_22=sim[(precision*22/tmax),2]
+num_at_24=sim[(precision*24/tmax),2]
 
-return(cbind(num_at_1,num_at_2,num_at_4,num_at_6))
-# return(cbind(num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
+return(cbind(num_at_0,num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
 }
 ```
 
@@ -123,11 +127,11 @@ deterministic_run_C<-function(precision,initial_contamination,parameters){
   times = seq(0, tmax, length.out = precision) #precision+1
 
 Y <-c(Contamination=initial_contamination) 
-sim <- ode(initial_contamination, times, func = "derivs", dllname = "testODE_arm64", initfunc = "initmod",
+sim <- ode(initial_contamination, times, func = "derivs", dllname = "testODE_X86", initfunc = "initmod",
             parms = parameters, method = "radau", atol = 1e-4, rtol = 1e-4)
 
-# num_at_0=sim[int(precision*0.1/50.0)]
-num_at_1=sim[(precision*1/tmax),2]
+num_at_0=initial_contamination
+# num_at_1=sim[(precision*1/tmax),2]
 num_at_2=sim[(precision*2/tmax),2]
 num_at_4=sim[(precision*4/tmax),2]
 num_at_6=sim[(precision*6/tmax),2]
@@ -136,7 +140,7 @@ num_at_18=sim[(precision*18/tmax),2]
 num_at_20=sim[(precision*20/tmax),2]
 num_at_22=sim[(precision*22/tmax),2]
 num_at_24=sim[(precision*24/tmax),2]
-return(cbind(num_at_1,num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
+return(cbind(num_at_0,num_at_2,num_at_4,num_at_6,num_at_16,num_at_18,num_at_20,num_at_22,num_at_24))
 }
 ```
 
@@ -172,13 +176,13 @@ experimental_dataU = dataUntreated$M[1:NROW(dataUntreated)]
 sU=dataUntreated$S[1:NROW(dataUntreated)]
 
 sample_size = 1000
-parameter_sample<- matrix(data=NA,nrow=1,ncol=5)
+parameter_sample<- matrix(data=NA,nrow=1,ncol=4)
 total_trials=0  #Starts the counter of run trials
 accepted_trials=0 
 
 #Create empty vector for the distances
 distances<-c()
-delta=60000#0.006136007
+delta=6000#0.006136007
 precision=5000 #this is delta t
 # library(foreach)
 # library(doParallel)
@@ -207,13 +211,13 @@ while (NROW(parameter_sample) <= sample_size){
 parameters <- c(C = trial_C, d = trial_d, g=trial_g,r=trial_r); #For C code
 #Treated
 one_run = deterministic_run_C(precision,initial_contamination,parameters)# For C code
-one_runU = deterministic_run_C(precision,initial_contaminationU,c(C = trial_C, d = 0, g=0,r=trial_rU))# For C code
+#one_runU = deterministic_run_C(precision,initial_contaminationU,c(C = trial_C, d = 0, g=0,r=trial_rU))# For C code
 
 # Now we find the Euclidean distance between the simulated output and the
 # experimental results. delta is the threshold that the Euclidean distance
 # must be less than for us to accept the trial parameters into our sample.
 
-euclidean_distance = abs(dist(rbind(one_run,experimental_data)))+abs(dist(rbind(one_runU,experimental_dataU)))#Distance(one_run, experimental_data,s)+Distance(one_runU, experimental_dataU,sU) # abs(dist(rbind(one_run,experimental_data))) #
+euclidean_distance = abs(dist(rbind(one_run,experimental_data)))#+abs(dist(rbind(one_runU,experimental_dataU)))#Distance(one_run, experimental_data,s)+Distance(one_runU, experimental_dataU,sU) # abs(dist(rbind(one_run,experimental_data))) #
 
 #print(euclidean_distance)# print(parameter_sample,euclidean_distance)
 #print(total_trials)
@@ -221,7 +225,7 @@ euclidean_distance = abs(dist(rbind(one_run,experimental_data)))+abs(dist(rbind(
 if (euclidean_distance < delta){
   #parameter_sample = parameter_sample[!is.na(parameter_sample)];
   # print(euclidean_distance)
-  parameter_sample=rbind(parameter_sample, c(trial_C,trial_d,trial_g,trial_r,trial_rU))
+  parameter_sample=rbind(parameter_sample, c(trial_C,trial_d,trial_g,trial_r))
   distances=rbind(distances,euclidean_distance)
   accepted_trials=accepted_trials+1.0
   print(paste0("Trial number accepted: ",accepted_trials))
@@ -237,7 +241,7 @@ print(paste0("Percentage of trials accepted: ",(100*accepted_trials/total_trials
 parameter_sample<-parameter_sample[order(distances), ]
 distances <- distances[order(distances)]
 parameter_sample<-parameter_sample%>%as.data.frame()#%>%set_colnames(c("r", "C", "d","g","l"))
-colnames(parameter_sample)<-c( "C", "d","g","r","rU")
+colnames(parameter_sample)<-c( "C", "d","g","r")
 summary(distances)
 #stopImplicitCluster()
 
@@ -405,7 +409,7 @@ write.csv(parameter_sample,"../Data/parameter_sample.csv",row.names = FALSE)
 parameter_sample %>% drop_na %>% summary()
 ```
 
-# Plot example curves against experimetnal data
+# Plot example curves against experimental data
 ```{r curves}
 ## Plotting a single best curve
   # initial_contamination=c(Contamination=1200) #median 34
@@ -457,8 +461,8 @@ ribbon_data <- data.frame(ymin=sim %>% as_tibble()%>% filter(CurveNum==1) %>% se
 
 
 ggplot()+
-  geom_point(data=df %>% filter(treatment=="Treated" & time <30),aes(x=time,y=conc),colour="darkblue")+
-  geom_line(data=sim %>% as_tibble()%>% filter(CurveNum==2) ,aes(x=Time,y=Contamination))+
+  geom_point(data=df %>% filter(treatment=="Treated" & time <30),aes(x=time,y=conc),colour="darkblue",size=2)+
+  geom_line(data=sim %>% as_tibble()%>% filter(CurveNum==2) ,aes(x=Time,y=Contamination),size=1.1)+
   geom_ribbon(data=ribbon_data ,aes(x=Time,ymin=ymin, ymax=ymax), alpha=0.2)+
 scale_y_continuous(trans="log")+
   xlab("Time (h)")+
@@ -466,6 +470,7 @@ scale_y_continuous(trans="log")+
   hrbrthemes::theme_ipsum()+
   theme(legend.position = "none")->a
 
+a
 #Untreated
 sim1<-ode(initial_contaminationU, times, ode_model, c(C=parameter_sample$C[1],d=0,g=0, r=parameter_sample$r[1],d=0), method = "radau",atol = 1e-4, rtol = 1e-4)
 sim2<-ode(initial_contaminationU, times, ode_model, c(C=parameter_sample$C[1],d=0,g=0, r=parameter_sample$r[1],d=0), method = "radau",atol = 1e-4, rtol = 1e-4)
