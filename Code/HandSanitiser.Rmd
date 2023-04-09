@@ -12,7 +12,7 @@ pacman::p_load(dplyr,ggplot2,tidyr,brms,janitor,vroom,hrbrthemes)
 
 
 ```{r data import}
-df<-vroom::vroom("Data/gerba.data.20200302.csv") %>% janitor::clean_names() %>% select(-1) %>% 
+df<-vroom::vroom("../Data/gerba.data.20200302.csv") %>% janitor::clean_names() %>% select(-1) %>% 
   mutate(treatment=as.factor(treatment),
          group=as.factor(group))
 # df %>% 
@@ -122,6 +122,7 @@ broom::tidy(selectedMod)
 
 
 ```
+
 It turns out that only time and the concentration on the untreated value have a significant effect on predicting concentration on the hand. This is good to know and shows that the regression lines plotted above are not significantly different.
 
 Here we plot the points and superimpose a meand value plus 95% confidence interval
@@ -176,6 +177,30 @@ df %>%
   summarise(m=mean(conc),sd=sd(conc)) 
 ```
 
+# 09/04/2023
+
+```{r lmer}
+library(lme4)
+
+# Create a new variable for the time segments (0-2 hours and after 2 hours)
+df$TimeSegment <- ifelse(df$time <= 2, "0-2_hours", "after_2_hours")
+
+# Fit the piecewise linear mixed effects model
+model <- lmer(conc ~ time * treatment * TimeSegment + (1 | id), data = df)
+
+
+```
+```{r}
+# Calculate AIC and BIC
+model_AIC <- AIC(model)
+model_BIC <- BIC(model)
+
+print(c(model_AIC,model_BIC))
+print(model_BIC)
+
+```
+
+
 
 ```{r fit the Bayesian model}
 
@@ -194,7 +219,7 @@ df %>%
 df %>% 
   mutate(id=as.factor(id))->df
 
-fit_m1<-brm(conc~group+time*treatment+(1|id),data=df,family =Gamma(link = "log"))
+fit_m1<-brm(conc~group+time*treatment*TimeSegment+(1|id),data=df,family =Gamma(link = "log"))
 
 fit_m2<-brm(conc~group+time*treatment+(1|id),data=df,family =lognormal(link = "identity", link_sigma = "log"))
            # prior=prior(normal(66569.89,107527.2)),sample_prior = "only")
@@ -202,10 +227,12 @@ fit_m2<-brm(conc~group+time*treatment+(1|id),data=df,family =lognormal(link = "i
 
 
 # conditional_effects(fit_m1)
-# summary(fit_m2)
+summary(fit_m1)
 # plot(fit_m1)
 ```
+
 Let's have a look at the density estimates from the model fit_m1 vs fit_m2
+
 ```{r}
 ggpubr::ggarrange(pp_check(fit_m1), pp_check(fit_m2))
 # plot(fit_m2)
